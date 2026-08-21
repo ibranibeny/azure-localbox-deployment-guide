@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="id">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Runbook Azure Local — Deployment, Diagnosa VM, dan VM Image</title>
-<meta name="description" content="Runbook operasional Azure Local: prasyarat, memantau deployment, mendiagnosa 'No Azure Local VMs to display', membuat VM image Windows dan Linux, serta cara update Arc agent yang didukung." />
+<title>Azure Local Runbook — Deployment, VM Enablement, and AKS Arc</title>
+<meta name="description" content="Operational runbook for Azure Local: architecture, prerequisites, monitoring deployment, diagnosing the empty VM blade, building Windows and Linux VM images, logical networks with IP pools, and the supported way to update the Arc agent." />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23b11f4b'/%3E%3Cpath d='M4 11.5 8 4l4 7.5H9.6L8 8.4l-1.6 3.1z' fill='white'/%3E%3C/svg%3E" />
 <script>
   (() => {
@@ -69,7 +69,6 @@ html[data-theme="dark"] {
 }
 
 * { box-sizing: border-box; }
-
 html { overflow-x: hidden; }
 
 body {
@@ -84,12 +83,10 @@ body {
 }
 
 code, pre, .mono { font-family: Consolas, "Courier New", Courier, monospace; }
-
 a { color: var(--cp-link); }
 
-.layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 32px; max-width: 1240px; margin: 0 auto; padding: 0 24px 96px; }
+.layout { display: grid; grid-template-columns: 268px minmax(0, 1fr); gap: 32px; max-width: 1240px; margin: 0 auto; padding: 0 24px 96px; }
 
-/* ---------- Masthead ---------- */
 .masthead { border-bottom: 1px solid var(--cp-border); background: var(--cp-bg-elevated); }
 .masthead-inner { max-width: 1240px; margin: 0 auto; padding: 40px 24px 32px; }
 .eyebrow { font-size: 0.75rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--cp-text-muted); margin: 0 0 12px; }
@@ -98,7 +95,6 @@ h1 { font-size: clamp(1.9rem, 4vw, 2.9rem); line-height: 1.15; margin: 0 0 12px;
 .meta-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { font-size: 0.78rem; padding: 4px 10px; border: 1px solid var(--cp-border); border-radius: 999px; color: var(--cp-text-muted); background: var(--cp-surface); }
 
-/* ---------- Readiness rail (signature) ---------- */
 .rail { margin-top: 32px; border: 1px solid var(--cp-border); border-radius: 16px; background: var(--cp-surface); padding: 20px; box-shadow: 0 0 2px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.14); }
 .rail h2 { margin: 0 0 4px; font-size: 1rem; font-weight: 600; }
 .rail p { margin: 0 0 18px; color: var(--cp-text-muted); font-size: 0.9rem; }
@@ -110,7 +106,6 @@ h1 { font-size: clamp(1.9rem, 4vw, 2.9rem); line-height: 1.15; margin: 0 0 12px;
 .rail-cell.gate { border-color: var(--cp-accent); background: var(--cp-accent-soft); }
 .rail-note { margin-top: 14px; font-size: 0.88rem; color: var(--cp-text-muted); border-left: 3px solid var(--cp-accent); padding-left: 12px; }
 
-/* ---------- Nav ---------- */
 nav.toc { position: sticky; top: 24px; align-self: start; max-height: calc(100vh - 48px); overflow: auto; padding-top: 40px; }
 nav.toc ol { list-style: none; margin: 0; padding: 0; counter-reset: step; }
 nav.toc li { counter-increment: step; }
@@ -119,21 +114,17 @@ nav.toc a::before { content: counter(step, decimal-leading-zero); position: abso
 nav.toc a:hover { background: var(--cp-surface-soft); color: var(--cp-text); }
 nav.toc a.active { background: var(--cp-accent-soft); color: var(--cp-accent); font-weight: 600; }
 nav.toc a:focus-visible, .copy-btn:focus-visible, .nav-toggle:focus-visible { outline: 2px solid var(--cp-accent); outline-offset: 2px; }
-
 .nav-toggle { display: none; }
 
 main { padding-top: 40px; min-width: 0; }
-
 section { margin-bottom: 56px; scroll-margin-top: 24px; }
 section > h2 { font-size: 1.45rem; font-weight: 600; margin: 0 0 6px; letter-spacing: -0.01em; }
 section > .sub { color: var(--cp-text-muted); margin: 0 0 20px; }
 h3 { font-size: 1.02rem; font-weight: 600; margin: 26px 0 8px; }
-
 p { margin: 0 0 14px; }
 ul, ol { margin: 0 0 14px; padding-left: 22px; }
 li { margin-bottom: 6px; }
 
-/* ---------- Code ---------- */
 .code { position: relative; border: 1px solid var(--cp-border); border-radius: 0.625rem; background: var(--cp-surface); margin: 0 0 16px; overflow: hidden; }
 .code-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--cp-border); background: var(--cp-surface-soft); }
 .code-lang { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--cp-text-muted); }
@@ -141,13 +132,11 @@ li { margin-bottom: 6px; }
 .copy-btn:hover { border-color: var(--cp-accent); color: var(--cp-accent); }
 pre { margin: 0; padding: 14px; overflow-x: auto; font-size: 0.84rem; line-height: 1.55; }
 
-/* ---------- Callouts ---------- */
 .note { border-left: 3px solid var(--cp-link); background: var(--cp-surface); border-radius: 0 0.625rem 0.625rem 0; padding: 14px 16px; margin: 0 0 16px; font-size: 0.92rem; }
 .warn { border-left-color: var(--cp-danger); }
 .good { border-left-color: var(--cp-success); }
 .note strong { display: block; margin-bottom: 4px; }
 
-/* ---------- Tables ---------- */
 .table-wrap { overflow-x: auto; margin: 0 0 16px; border: 1px solid var(--cp-border); border-radius: 0.625rem; }
 table { border-collapse: collapse; width: 100%; font-size: 0.88rem; background: var(--cp-surface); }
 th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--cp-border); vertical-align: top; }
@@ -159,12 +148,11 @@ tbody tr:last-child td { border-bottom: none; }
 .state.bad { background: var(--cp-accent-soft); color: var(--cp-danger); border: 1px solid var(--cp-danger); }
 .state.wait { background: var(--cp-accent-soft); color: var(--cp-warning); border: 1px solid var(--cp-warning); }
 
-/* ---------- Figures (reproduksi tampilan) ---------- */
 figure { margin: 0 0 18px; border: 1px solid var(--cp-border); border-radius: 0.625rem; overflow: hidden; background: var(--cp-surface); }
-figure svg { display: block; width: 100%; height: auto; }
+figure svg, figure img { display: block; width: 100%; height: auto; }
+figure img { background: #ffffff; }
 figcaption { font-size: 0.8rem; color: var(--cp-text-muted); padding: 10px 12px; border-top: 1px solid var(--cp-border); background: var(--cp-surface-soft); }
 
-/* ---------- Details ---------- */
 details { border: 1px solid var(--cp-border); border-radius: 0.625rem; padding: 12px 14px; margin: 0 0 14px; background: var(--cp-surface); }
 summary { cursor: pointer; font-weight: 600; font-size: 0.92rem; }
 details[open] summary { margin-bottom: 10px; }
@@ -190,75 +178,170 @@ footer { border-top: 1px solid var(--cp-border); background: var(--cp-bg-elevate
 
 <header class="masthead">
   <div class="masthead-inner">
-    <p class="eyebrow">Runbook Operasional</p>
-    <h1>Azure Local: dari deployment sampai VM pertama</h1>
+    <p class="eyebrow">Operational Runbook</p>
+    <h1>Azure Local: from deployment to your first VM</h1>
     <p class="lede">
-      Panduan berbasis kejadian nyata. Fokusnya pada satu pertanyaan yang paling sering menyesatkan:
-      kenapa tombol <em>Create VM</em> tetap kosong padahal host sudah Windows Server 24H2 dan status Arc sudah <em>Connected</em>.
+      Written from a single real deployment cycle. It centres on the question that misleads people most often:
+      why the <em>Create VM</em> experience stays empty even though the hosts already run Windows Server 24H2
+      and report <em>Connected</em> in Azure Arc.
     </p>
     <div class="meta-row">
       <span class="chip">Azure Local 23H2 / 24H2</span>
       <span class="chip">Azure CLI</span>
       <span class="chip">Arc Resource Bridge</span>
-      <span class="chip">Terverifikasi 21 Agustus 2026</span>
+      <span class="chip">AKS enabled by Azure Arc</span>
+      <span class="chip">Verified 21 August 2026</span>
     </div>
 
     <div class="rail">
-      <h2>Peta kesiapan: tiga lapisan yang sering dikira satu</h2>
-      <p>Kegagalan paling umum terjadi karena lapisan 1 dianggap membuktikan lapisan 3. Padahal tidak.</p>
+      <h2>Readiness map: three layers that are easily mistaken for one</h2>
+      <p>Most failed troubleshooting sessions treat layer 1 as proof of layer 3. It is not.</p>
       <div class="rail-track">
         <div class="rail-cell">
-          <div class="layer">Lapisan 1 — Host</div>
-          <div class="what">OS 24H2, node Connected</div>
-          <div class="why">Membuktikan mesin terdaftar ke Arc. Tidak membuktikan apa pun soal kemampuan membuat VM.</div>
+          <div class="layer">Layer 1 — Hosts</div>
+          <div class="what">OS 24H2, nodes Connected</div>
+          <div class="why">Proves only that the machines are onboarded to Arc. It says nothing about VM capability.</div>
         </div>
         <div class="rail-cell gate">
-          <div class="layer">Lapisan 2 — Control plane</div>
+          <div class="layer">Layer 2 — Control plane</div>
           <div class="what">Resource Bridge + Custom Location</div>
-          <div class="why">Ini gerbang sebenarnya. Selama belum ada, portal menampilkan empty state yang membingungkan.</div>
+          <div class="why">The real gate. Until both exist and are healthy, the portal shows a misleading empty state.</div>
         </div>
         <div class="rail-cell">
-          <div class="layer">Lapisan 3 — Resource VM</div>
+          <div class="layer">Layer 3 — VM resources</div>
           <div class="what">Logical network, storage path, VM image</div>
-          <div class="why">Tanpa image, tombol Create VM ada tapi tidak ada yang bisa dipilih.</div>
+          <div class="why">Without an image there is nothing to select; without an IP pool AKS Arc refuses the network.</div>
         </div>
       </div>
       <p class="rail-note">
-        Aturan praktis: kalau portal bilang <em>"No Azure Local VMs to display"</em>, jangan periksa versi OS lebih dulu. Periksa lapisan 2.
+        Rule of thumb: when the portal says <em>"No Azure Local VMs to display"</em>, do not start by checking the OS version. Start at layer 2.
       </p>
     </div>
   </div>
 </header>
 
 <div class="layout">
-  <nav class="toc" id="toc" aria-label="Daftar isi">
+  <nav class="toc" id="toc" aria-label="Table of contents">
     <ol>
-      <li><a href="#prasyarat">Prasyarat Azure</a></li>
-      <li><a href="#deploy">Memantau deployment</a></li>
-      <li><a href="#empty">Diagnosa "No VMs to display"</a></li>
-      <li><a href="#verifikasi">Verifikasi control plane</a></li>
-      <li><a href="#lnet">Logical network</a></li>
-      <li><a href="#image-win">VM image Windows</a></li>
-      <li><a href="#image-linux">VM image Linux</a></li>
-      <li><a href="#buat-vm">Membuat VM</a></li>
-      <li><a href="#arc-agent">Update Arc agent</a></li>
-      <li><a href="#gotcha">Jebakan CLI di Windows</a></li>
-      <li><a href="#referensi">Referensi</a></li>
+      <li><a href="#architecture">Architecture overview</a></li>
+      <li><a href="#prerequisites">Azure prerequisites</a></li>
+      <li><a href="#deployment">Monitoring deployment</a></li>
+      <li><a href="#empty-blade">Diagnosing the empty VM blade</a></li>
+      <li><a href="#verify">Verifying the control plane</a></li>
+      <li><a href="#lnet">Logical networks and IP pools</a></li>
+      <li><a href="#windows-image">Windows VM image</a></li>
+      <li><a href="#linux-image">Linux VM image</a></li>
+      <li><a href="#create-vm">Creating a VM</a></li>
+      <li><a href="#aks">AKS enabled by Azure Arc</a></li>
+      <li><a href="#arc-agent">Updating the Arc agent</a></li>
+      <li><a href="#pitfalls">Windows CLI pitfalls</a></li>
+      <li><a href="#automation">Automation script</a></li>
+      <li><a href="#references">References</a></li>
     </ol>
   </nav>
 
   <main>
-    <button class="nav-toggle" id="navToggle" aria-expanded="false" aria-controls="toc">Daftar isi</button>
+    <button class="nav-toggle" id="navToggle" aria-expanded="false" aria-controls="toc">Table of contents</button>
 
-    <!-- 1 -->
-    <section id="prasyarat">
-      <h2>1. Prasyarat Azure</h2>
-      <p class="sub">Dikerjakan sekali per subscription. Melewatkan satu provider akan muncul sebagai error yang tidak jelas jauh di kemudian hari.</p>
+    <section id="architecture">
+      <h2>1. Architecture overview</h2>
+      <p class="sub">Knowing which component owns which responsibility explains almost every failure mode in this runbook.</p>
 
-      <p>Daftarkan resource provider berikut. <code>Microsoft.EdgeMarketplace</code> paling sering terlewat karena baru dibutuhkan saat membuat VM image, bukan saat deployment.</p>
+      <p>
+        Azure Local is not simply a cluster that reports into Azure. Since version 2311.2 it is an Arc-enabled
+        solution: the operating system forms the base layer, and the Arc components plus the Lifecycle Manager sit
+        on top, shipped together as one validated solution. That packaging is why individual components must not be
+        patched out of band, and why deployment has so many discrete stages.
+      </p>
+
+      <h3>Azure Arc resource bridge: the control plane</h3>
+
+      <p>
+        The resource bridge is a lightweight Kubernetes appliance running on your own hardware. It is what allows
+        Azure Resource Manager to project and manage on-premises resources. When you create a VM from the portal,
+        ARM does not talk to Hyper-V directly: it writes an ARM resource, and the bridge reconciles that intent locally.
+      </p>
+
+      <figure>
+        <img src="assets/arc-resource-bridge-architecture.png" alt="Azure Arc resource bridge architecture showing Azure Resource Manager projecting resources into an on-premises private cloud environment through the resource bridge appliance." loading="lazy" />
+        <figcaption>Arc resource bridge architecture. Source: Microsoft Learn, <a href="https://learn.microsoft.com/azure/azure-arc/resource-bridge/overview">What is Azure Arc resource bridge?</a></figcaption>
+      </figure>
+
+      <p>Two consequences follow directly from this design, and both explain symptoms covered later:</p>
+
+      <ul>
+        <li>The Azure resources you see are <strong>projections</strong>. If the appliance becomes unhealthy, Azure loses visibility and management even though the workloads keep running on-premises.</li>
+        <li>The bridge needs ongoing maintenance. Microsoft states that solution updates must be applied within one year to keep certificates valid and Azure Local VM functionality working.</li>
+      </ul>
+
+      <h3>Custom location: where resources are actually placed</h3>
+
+      <p>
+        The bridge alone is not enough. A <strong>custom location</strong> is the deployment target that extends an
+        Azure region onto your hardware. Creating a VM image, a logical network, or a VM means passing a custom
+        location ID instead of an Azure region. If it does not exist, those resources have nowhere to land, which is
+        exactly why the portal blade appears empty.
+      </p>
+
+      <h3>Networking: logical networks and the management network</h3>
+
+      <p>
+        Workload VMs and AKS node VMs take addresses from an Azure Local <strong>logical network</strong>, while the
+        resource bridge and platform services use the management network defined at deployment time. These are
+        frequently different VLANs, which makes cross-VLAN reachability a common source of AKS failures.
+      </p>
+
+      <figure>
+        <img src="assets/arc-vm-management-networking.png" alt="Azure Local Arc VM management networking diagram showing Arc VMs on a user VM virtual network, the resource bridge VM, and the physical node network." loading="lazy" />
+        <figcaption>Arc VM management networking. Source: Microsoft Learn, <a href="https://learn.microsoft.com/azure/azure-local/manage/azure-arc-vm-management-networking">Azure Local VM management networking</a></figcaption>
+      </figure>
+
+      <figure>
+        <img src="assets/azure-local-baseline-logical-network.png" alt="Azure Local baseline reference architecture showing logical network topology across clustered machines with dual top-of-rack switches." loading="lazy" />
+        <figcaption>Baseline logical network topology. Source: Microsoft Learn, <a href="https://learn.microsoft.com/azure/architecture/hybrid/azure-local-baseline">Azure Local baseline reference architecture</a></figcaption>
+      </figure>
+
+      <h3>Reserved ranges you must design around</h3>
+
+      <p>
+        Two ranges are used internally by the Kubernetes platform behind both the resource bridge and AKS. No
+        infrastructure address, and no private endpoint that AKS must reach, may live inside them, because traffic
+        to those addresses never leaves the cluster.
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Reserved range</th><th>Used for</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">10.96.0.0/12</td><td>Kubernetes internal services (cluster IPs)</td></tr>
+            <tr><td class="mono">10.244.0.0/16</td><td>Kubernetes pod networking</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>How the pieces line up</h3>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Component</th><th>ARM resource type</th><th>Created by</th><th>Blocks what if missing</th></tr></thead>
+          <tbody>
+            <tr><td>Azure Local instance</td><td class="mono">Microsoft.AzureStackHCI/clusters</td><td>Deployment</td><td>Everything</td></tr>
+            <tr><td>Arc resource bridge</td><td class="mono">Microsoft.ResourceConnector/appliances</td><td>Deployment</td><td>All VM management</td></tr>
+            <tr><td>Custom location</td><td class="mono">Microsoft.ExtendedLocation/customLocations</td><td>Deployment</td><td>All VM management</td></tr>
+            <tr><td>Storage path</td><td class="mono">Microsoft.AzureStackHCI/storageContainers</td><td>Deployment</td><td>Image and VM placement</td></tr>
+            <tr><td>Logical network</td><td class="mono">Microsoft.AzureStackHCI/logicalNetworks</td><td>You</td><td>VM networking, AKS</td></tr>
+            <tr><td>VM image</td><td class="mono">marketplaceGalleryImages / galleryImages</td><td>You</td><td>VM creation</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="prerequisites">
+      <h2>2. Azure prerequisites</h2>
+      <p class="sub">Done once per subscription. A missing provider surfaces much later as an error that looks unrelated.</p>
 
       <div class="code">
-        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
 <pre>az provider register --namespace Microsoft.AzureStackHCI
 az provider register --namespace Microsoft.HybridCompute
 az provider register --namespace Microsoft.HybridConnectivity
@@ -268,10 +351,10 @@ az provider register --namespace Microsoft.KubernetesConfiguration
 az provider register --namespace Microsoft.EdgeMarketplace</pre>
       </div>
 
-      <p>Verifikasi semuanya sudah <code>Registered</code> sebelum lanjut:</p>
+      <p>Confirm every provider reports <code>Registered</code> before continuing:</p>
 
       <div class="code">
-        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
 <pre>$providers = 'Microsoft.AzureStackHCI','Microsoft.HybridCompute',
              'Microsoft.ExtendedLocation','Microsoft.ResourceConnector',
              'Microsoft.EdgeMarketplace'
@@ -284,28 +367,30 @@ $rows | Format-Table -AutoSize</pre>
       </div>
 
       <div class="note">
-        <strong>Kenapa ini penting</strong>
-        Tanpa <code>Microsoft.EdgeMarketplace</code>, pembuatan VM image gagal dengan
-        <code>SubscriptionNotRegistered</code> — pesan yang muncul berjam-jam setelah deployment selesai,
-        sehingga mudah dikira masalah cluster.
+        <strong>Why Microsoft.EdgeMarketplace matters</strong>
+        It is only exercised when downloading a Marketplace VM image, which usually happens hours after deployment
+        finishes. Without it, image creation fails with <code>SubscriptionNotRegistered</code>, and the timing makes
+        it look like a cluster problem.
       </div>
 
-      <h3>Peran RBAC</h3>
+      <h3>Role assignments</h3>
       <ul>
-        <li><strong>Azure Connected Machine Onboarding</strong> dan <strong>Azure Connected Machine Resource Administrator</strong> pada resource group tempat node didaftarkan.</li>
-        <li><strong>Azure Connected Machine Resource Manager</strong> untuk resource provider app <code>Microsoft.AzureStackHCI</code> pada resource group tempat image diunduh.</li>
+        <li><strong>Azure Connected Machine Onboarding</strong> and <strong>Azure Connected Machine Resource Administrator</strong> on the resource group where machines are registered.</li>
+        <li><strong>Azure Connected Machine Resource Manager</strong> granted to the <code>Microsoft.AzureStackHCI</code> resource provider application, on the resource group where images are downloaded.</li>
       </ul>
     </section>
 
-    <!-- 2 -->
-    <section id="deploy">
-      <h2>2. Memantau deployment</h2>
-      <p class="sub">Deployment Azure Local berjalan sekitar 54 tahap. Yang perlu dipahami: statusnya bertingkat, dan ARM tidak menceritakan semuanya.</p>
+    <section id="deployment">
+      <h2>3. Monitoring deployment</h2>
+      <p class="sub">Deployment runs roughly 54 stages. Status is layered, and ARM does not tell the whole story.</p>
 
-      <p>Status di level resource group hanya bilang <code>Running</code>. Detail sebenarnya ada di resource <code>deploymentSettings</code>:</p>
+      <p>
+        At resource group level the deployment simply reports <code>Running</code>. The detail lives inside the
+        <code>deploymentSettings</code> child resource:
+      </p>
 
       <div class="code">
-        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
 <pre>$sub = "&lt;SUBSCRIPTION_ID&gt;"
 $rg  = "&lt;RESOURCE_GROUP&gt;"
 $cluster = "&lt;CLUSTER_NAME&gt;"
@@ -316,10 +401,8 @@ $id = "/subscriptions/$sub/resourceGroups/$rg/providers/" +
 az resource show --ids $id --api-version 2024-04-01 -o json</pre>
       </div>
 
-      <p>Di dalam responsnya ada daftar tahap lengkap dengan <code>status</code>, <code>startTimeUtc</code>, dan <code>endTimeUtc</code>. Contoh potongan saat deployment masih berjalan:</p>
-
       <figure>
-        <svg viewBox="0 0 900 250" role="img" aria-label="Reproduksi daftar tahap deployment Azure Local dengan status Success dan In Progress">
+        <svg viewBox="0 0 900 250" role="img" aria-label="Reproduction of the Azure Local deployment stage list showing Success and In Progress states">
           <rect width="900" height="250" fill="var(--cp-surface)"/>
           <g font-family="Consolas, monospace" font-size="13">
             <rect x="0" y="0" width="900" height="28" fill="var(--cp-surface-soft)"/>
@@ -361,23 +444,22 @@ az resource show --ids $id --api-version 2024-04-01 -o json</pre>
             <text x="622" y="236" fill="var(--cp-text-muted)">Unknown</text>
           </g>
         </svg>
-        <figcaption>Reproduksi tampilan Settings &gt; Deployment. Tahap 0.40 adalah titik yang membuat menu VM belum berfungsi. Tahap sesudahnya berstatus <code>Unknown</code> karena memang belum dijalankan — ini normal, bukan error.</figcaption>
+        <figcaption>Reproduction of Settings &gt; Deployment. Stage 0.40 is what gates the VM experience. Later stages showing <code>Unknown</code> simply have not started yet.</figcaption>
       </figure>
 
       <div class="note good">
-        <strong>Jangan panik melihat "Unknown"</strong>
-        <code>Unknown</code> berarti tahap belum dimulai. Yang menandakan masalah adalah <code>Failed</code>.
-        Deployment dua node normalnya memakan waktu sekitar 2,5 jam.
+        <strong>"Unknown" is not an error</strong>
+        It means the stage has not started. Only <code>Failed</code> indicates a problem. A two-node deployment
+        typically takes around two and a half hours, and the Arc infrastructure stage alone can run for tens of minutes.
       </div>
     </section>
 
-    <!-- 3 -->
-    <section id="empty">
-      <h2>3. Diagnosa "No Azure Local VMs to display"</h2>
-      <p class="sub">Portal menampilkan dua pesan berbeda untuk kondisi ini, dan salah satunya menyesatkan.</p>
+    <section id="empty-blade">
+      <h2>4. Diagnosing the empty VM blade</h2>
+      <p class="sub">The portal shows two different messages for this condition, and one of them is misleading.</p>
 
       <figure>
-        <svg viewBox="0 0 900 210" role="img" aria-label="Reproduksi dua pesan kosong di halaman Virtual machines Azure Local">
+        <svg viewBox="0 0 900 210" role="img" aria-label="Reproduction of the two empty state messages on the Azure Local virtual machines blade">
           <rect width="900" height="210" fill="var(--cp-surface)"/>
           <rect x="0" y="0" width="900" height="34" fill="var(--cp-accent-soft)"/>
           <circle cx="22" cy="17" r="7" fill="var(--cp-danger)"/>
@@ -388,60 +470,39 @@ az resource show --ids $id --api-version 2024-04-01 -o json</pre>
           <text x="450" y="128" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="12.5" fill="var(--cp-text-muted)">Check Settings &gt; Deployment to ensure all steps show 'Success'.</text>
 
           <rect x="120" y="150" width="660" height="44" rx="8" fill="var(--cp-surface-soft)" stroke="var(--cp-border)"/>
-          <text x="450" y="170" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="12.5" fill="var(--cp-text-muted)">Versi lain dari pesan ini menyebut "Azure Local VMs are only supported on</text>
-          <text x="450" y="187" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="12.5" fill="var(--cp-text-muted)">Azure Local version 23H2 and beyond" — abaikan jika OS Anda sudah 24H2.</text>
+          <text x="450" y="170" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="12.5" fill="var(--cp-text-muted)">A different variant reads "Azure Local VMs are only supported on Azure Local</text>
+          <text x="450" y="187" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="12.5" fill="var(--cp-text-muted)">version 23H2 and beyond" — disregard it when your OS already reports 24H2.</text>
         </svg>
-        <figcaption>Reproduksi empty state. Pesan "Arc infrastructure components are offline" akurat. Pesan tentang versi 23H2 menyesatkan pada sistem 24H2.</figcaption>
+        <figcaption>Reproduction of the empty state. The "Arc infrastructure components are offline" wording is accurate. The 23H2 version wording is misleading on a 24H2 system.</figcaption>
       </figure>
 
-      <h3>Pohon keputusan</h3>
+      <h3>Decision tree</h3>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Periksa</th><th>Perintah</th><th>Kesimpulan bila tidak sesuai</th></tr></thead>
+          <thead><tr><th>Check</th><th>Where</th><th>What it means if wrong</th></tr></thead>
           <tbody>
-            <tr>
-              <td>Deployment selesai?</td>
-              <td class="mono">deploymentSettings/default</td>
-              <td>Masih ada tahap <code>InProgress</code> — tunggu, jangan intervensi.</td>
-            </tr>
-            <tr>
-              <td>Resource Bridge ada dan <code>Running</code>?</td>
-              <td class="mono">Microsoft.ResourceConnector/appliances</td>
-              <td><code>WaitingForHeartbeat</code> berarti appliance belum lapor ke Azure.</td>
-            </tr>
-            <tr>
-              <td>Custom location ada?</td>
-              <td class="mono">Microsoft.ExtendedLocation/customLocations</td>
-              <td>Belum ada berarti control plane VM belum terbentuk.</td>
-            </tr>
-            <tr>
-              <td>Logical network ada?</td>
-              <td class="mono">Microsoft.AzureStackHCI/logicalNetworks</td>
-              <td>Hanya ada InfraLNET berarti belum ada jaringan untuk VM workload.</td>
-            </tr>
-            <tr>
-              <td>VM image ada?</td>
-              <td class="mono">az stack-hci-vm image list</td>
-              <td>Kosong berarti Create VM tidak punya pilihan image.</td>
-            </tr>
+            <tr><td>Deployment finished?</td><td class="mono">deploymentSettings/default</td><td>A stage is still <code>InProgress</code>. Wait; do not intervene.</td></tr>
+            <tr><td>Resource bridge <code>Running</code>?</td><td class="mono">Microsoft.ResourceConnector/appliances</td><td><code>WaitingForHeartbeat</code> means the appliance has not reported to Azure yet.</td></tr>
+            <tr><td>Custom location exists?</td><td class="mono">Microsoft.ExtendedLocation/customLocations</td><td>The VM control plane has not been created.</td></tr>
+            <tr><td>Workload logical network exists?</td><td class="mono">Microsoft.AzureStackHCI/logicalNetworks</td><td>Only the InfraLNET exists, which is reserved for infrastructure.</td></tr>
+            <tr><td>VM image exists?</td><td class="mono">az stack-hci-vm image list</td><td>Create VM has nothing to offer in the image list.</td></tr>
           </tbody>
         </table>
       </div>
 
       <div class="note warn">
-        <strong>Yang tidak membuktikan apa pun</strong>
-        Node berstatus <code>Connected</code> dengan OS <code>24H2</code>. Itu hanya berarti Arc agent berjalan.
-        Kemampuan membuat VM ditentukan oleh Resource Bridge dan custom location, bukan oleh versi OS.
+        <strong>What proves nothing</strong>
+        Nodes reporting <code>Connected</code> with OS <code>24H2</code>. That only means the Connected Machine agent
+        is running. VM capability is governed by the resource bridge and the custom location.
       </div>
     </section>
 
-    <!-- 4 -->
-    <section id="verifikasi">
-      <h2>4. Verifikasi control plane</h2>
-      <p class="sub">Satu blok perintah untuk memastikan seluruh lapisan 2 dan 3 benar-benar ada.</p>
+    <section id="verify">
+      <h2>5. Verifying the control plane</h2>
+      <p class="sub">One block that confirms every layer 2 and layer 3 resource actually exists.</p>
 
       <div class="code">
-        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
 <pre>$sub = "&lt;SUBSCRIPTION_ID&gt;"
 $rg  = "&lt;RESOURCE_GROUP&gt;"
 
@@ -461,11 +522,9 @@ $all |
   Format-Table -AutoSize</pre>
       </div>
 
-      <p>Kondisi sehat terlihat seperti ini:</p>
-
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Resource</th><th>Tipe</th><th>Status yang diharapkan</th></tr></thead>
+          <thead><tr><th>Resource</th><th>Type</th><th>Healthy value</th></tr></thead>
           <tbody>
             <tr><td class="mono">&lt;cluster&gt;-arcbridge</td><td class="mono">appliances</td><td><span class="state ok">Running</span></td></tr>
             <tr><td class="mono">&lt;custom-location&gt;</td><td class="mono">customLocations</td><td><span class="state ok">Succeeded</span></td></tr>
@@ -476,13 +535,13 @@ $all |
       </div>
 
       <div class="note">
-        <strong>Membedakan Succeeded dari Running</strong>
-        Pada Arc Resource Bridge, <code>provisioningState</code> bisa <code>Succeeded</code> sementara
-        <code>status</code> masih <code>WaitingForHeartbeat</code>. Yang menentukan kesiapan adalah <code>status</code>.
+        <strong>Succeeded is not the same as Running</strong>
+        On the resource bridge, <code>provisioningState</code> can read <code>Succeeded</code> while
+        <code>status</code> is still <code>WaitingForHeartbeat</code>. The runtime <code>status</code> is what gates VM creation.
       </div>
 
       <div class="code">
-        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
 <pre>az resource show `
   --ids "/subscriptions/$sub/resourceGroups/$rg/providers/Microsoft.ResourceConnector/appliances/&lt;CLUSTER&gt;-arcbridge" `
   --api-version 2022-10-27 `
@@ -490,24 +549,22 @@ $all |
       </div>
     </section>
 
-    <!-- 5 -->
     <section id="lnet">
-      <h2>5. Logical network</h2>
-      <p class="sub">InfraLNET yang dibuat otomatis bukan untuk VM workload.</p>
+      <h2>6. Logical networks and IP pools</h2>
+      <p class="sub">The automatically created InfraLNET is not for workloads, and a network without an IP pool will break AKS.</p>
 
       <p>
-        Setelah deployment, biasanya hanya ada satu logical network berakhiran <code>-InfraLNET</code>.
-        Jaringan itu dipakai Arc Resource Bridge dan hanya menyediakan segelintir alamat IP.
-        VM workload memerlukan logical network tersendiri.
+        After deployment you normally have a single logical network whose name ends in <code>-InfraLNET</code>.
+        It belongs to the Arc resource bridge and typically exposes only a couple of usable addresses. Workload VMs
+        and AKS nodes need their own logical network.
       </p>
 
       <div class="code">
-        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
 <pre>$cl = "/subscriptions/$sub/resourceGroups/$rg/providers/" +
       "Microsoft.ExtendedLocation/customLocations/&lt;CUSTOM_LOCATION&gt;"
 
 az stack-hci-vm network lnet create `
-  --subscription $sub `
   --resource-group $rg `
   --custom-location $cl `
   --location &lt;REGION&gt; `
@@ -517,29 +574,63 @@ az stack-hci-vm network lnet create `
   --address-prefixes 192.168.200.0/24 `
   --gateway 192.168.200.1 `
   --dns-servers &lt;DNS_IP&gt; `
-  --vlan 200</pre>
+  --vlan 200 `
+  --ip-pool-start 192.168.200.11 `
+  --ip-pool-end 192.168.200.60</pre>
       </div>
 
       <div class="note warn">
-        <strong>Perhatikan tanda kutip pada nama switch</strong>
-        <code>ConvergedSwitch(compute_management)</code> mengandung tanda kurung. Di Windows,
-        <code>az</code> adalah pembungkus batch, sehingga tanda kurung tanpa kutip akan dipecah oleh cmd.
-        Bungkus dengan <code>'"..."'</code> seperti contoh di atas.
+        <strong>Always create the IP pool up front</strong>
+        AKS Arc admission control rejects a logical network with no IP pool, reporting
+        <code>LogicalNetworkValidation ... does not have an ippool</code>. The pool cannot be added later, because
+        <code>az stack-hci-vm network lnet update</code> does not expose those parameters. Fixing it means deleting
+        and recreating the network, which also means removing anything attached to it.
+      </div>
+
+      <h3>Sizing the pool</h3>
+
+      <p>Microsoft gives a formula for AKS clusters:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">Formula</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>IPs per cluster = controlPlaneNodeCount + workerNodeCount + 2 + loadBalancerIPs</pre>
+      </div>
+
+      <p>
+        The <strong>+ 2</strong> covers the control plane virtual IP and one spare address used during rolling
+        upgrades, when an extra node is created temporarily. Where a load balancer such as MetalLB runs in L2/ARP
+        mode, Microsoft recommends keeping its addresses <em>outside</em> the logical network pool to avoid conflicts
+        that are hard to diagnose.
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Range</th><th>Purpose</th><th>In the LNET pool?</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">192.168.200.11 – .60</td><td>Arc VM and AKS node addresses</td><td>Yes</td></tr>
+            <tr><td class="mono">192.168.200.61 – .90</td><td>Reserved for MetalLB services</td><td>No</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note warn">
+        <strong>Quoting the switch name</strong>
+        <code>ConvergedSwitch(compute_management)</code> contains parentheses. On Windows the <code>az</code> command
+        is a batch wrapper, so unquoted parentheses get split by cmd. Wrap the value as <code>'"..."'</code> exactly
+        as shown above.
       </div>
     </section>
 
-    <!-- 6 -->
-    <section id="image-win">
-      <h2>6. VM image Windows</h2>
-      <p class="sub">Windows bisa ditarik langsung dari Azure Marketplace lewat URN.</p>
+    <section id="windows-image">
+      <h2>7. Windows VM image</h2>
+      <p class="sub">Windows images can be pulled straight from Azure Marketplace by URN.</p>
 
       <div class="code">
-        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
 <pre>$sp = "/subscriptions/$sub/resourceGroups/$rg/providers/" +
       "Microsoft.AzureStackHCI/storageContainers/&lt;STORAGE_PATH&gt;"
 
 az stack-hci-vm image create `
-  --subscription $sub `
   --resource-group $rg `
   --custom-location $cl `
   --location &lt;REGION&gt; `
@@ -551,10 +642,10 @@ az stack-hci-vm image create `
   --storage-path-id $sp</pre>
       </div>
 
-      <p>Pantau progres unduhan, karena perintah di atas hanya mengembalikan <code>Accepted</code> di awal:</p>
+      <p>The command returns <code>Accepted</code> immediately, so track the download separately:</p>
 
       <div class="code">
-        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
 <pre>$id = "/subscriptions/$sub/resourceGroups/$rg/providers/" +
       "Microsoft.AzureStackHCI/marketplaceGalleryImages/ws2022"
 
@@ -568,77 +659,75 @@ $d = az resource show --ids $id --api-version 2025-04-01-preview -o json | Conve
 } | Format-List</pre>
       </div>
 
-      <h3>Kalau gagal dengan GenerateTokenFromEdgeMarketplaceServiceFailed</h3>
+      <h3>When GenerateTokenFromEdgeMarketplaceServiceFailed appears</h3>
 
-      <p>Error ini punya dua penyebab yang sangat berbeda. Bedakan dari isi pesannya:</p>
+      <p>This single error code has two very different causes. Read the inner message:</p>
 
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Isi pesan</th><th>Arti</th><th>Tindakan</th></tr></thead>
+          <thead><tr><th>Inner message</th><th>Meaning</th><th>Action</th></tr></thead>
           <tbody>
             <tr>
               <td class="mono">SubscriptionNotRegistered</td>
-              <td>Provider <code>Microsoft.EdgeMarketplace</code> belum terdaftar.</td>
-              <td>Daftarkan provider, lalu ulangi.</td>
+              <td>The <code>Microsoft.EdgeMarketplace</code> provider is not registered.</td>
+              <td>Register the provider, then retry.</td>
             </tr>
             <tr>
               <td class="mono">NotFound / ResourceNotFound</td>
-              <td>Provider sudah benar, tetapi image itu tidak bisa diterbitkan SAS-nya.</td>
-              <td>Coba SKU lain. Ini bukan masalah izin.</td>
+              <td>Registration is fine, but no download SAS can be issued for that image.</td>
+              <td>Choose a different SKU. This is not a permissions problem.</td>
             </tr>
           </tbody>
         </table>
       </div>
 
       <details>
-        <summary>Hasil pengujian tiga URN pada satu sistem yang sama</summary>
-        <p>Pengujian berikut dilakukan berurutan pada cluster yang identik, untuk memisahkan masalah konfigurasi dari masalah ketersediaan katalog.</p>
+        <summary>Controlled test of three URNs on one system</summary>
+        <p>Run back to back against the same cluster, to separate configuration problems from catalog availability.</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>URN</th><th>Versi ter-resolve</th><th>Hasil</th></tr></thead>
+            <thead><tr><th>URN</th><th>Version resolved</th><th>Result</th></tr></thead>
             <tbody>
-              <tr><td class="mono">microsoftwindowsserver:windowsserver:2022-datacenter-azure-edition</td><td>terisi</td><td><span class="state ok">Berhasil unduh</span></td></tr>
-              <tr><td class="mono">microsoftwindowsserver:windowsserver:2025-datacenter-azure-edition-smalldisk</td><td>terisi</td><td><span class="state bad">SAS gagal</span></td></tr>
-              <tr><td class="mono">canonical:ubuntu-24_04-lts:server</td><td>terisi</td><td><span class="state bad">SAS gagal</span></td></tr>
+              <tr><td class="mono">microsoftwindowsserver:windowsserver:2022-datacenter-azure-edition</td><td>Yes</td><td><span class="state ok">Downloaded</span></td></tr>
+              <tr><td class="mono">microsoftwindowsserver:windowsserver:2025-datacenter-azure-edition-smalldisk</td><td>Yes</td><td><span class="state bad">SAS refused</span></td></tr>
+              <tr><td class="mono">canonical:ubuntu-24_04-lts:server</td><td>Yes</td><td><span class="state bad">SAS refused</span></td></tr>
             </tbody>
           </table>
         </div>
         <p>
-          Versi ter-resolve untuk ketiganya, artinya katalog bisa membaca metadata image.
-          Yang gagal hanya penerbitan SAS untuk sebagian image. Karena itu, kegagalan semacam ini
-          adalah soal ketersediaan image, bukan salah konfigurasi.
+          All three resolved a version, so the catalog could read their metadata. Only SAS issuance failed, and only
+          for some images. That makes this an image availability condition rather than a misconfiguration. The Ubuntu
+          result is expected: the supported Marketplace image list for Azure Local contains Windows images only.
         </p>
       </details>
     </section>
 
-    <!-- 7 -->
-    <section id="image-linux">
-      <h2>7. VM image Linux</h2>
-      <p class="sub">Linux tidak bisa ditarik lewat URN. Prosedurnya berbeda sepenuhnya.</p>
+    <section id="linux-image">
+      <h2>8. Linux VM image</h2>
+      <p class="sub">Linux cannot be pulled by URN. The supported path builds the VHD yourself.</p>
 
       <div class="note">
-        <strong>Ini bukan bug</strong>
-        Daftar image Marketplace yang didukung Azure Local hanya berisi Windows.
-        Untuk Ubuntu dan RHEL, Microsoft mendokumentasikan jalur ekspor VHD.
+        <strong>This is documented behaviour, not a defect</strong>
+        Microsoft routes Ubuntu and RHEL through a disk export procedure rather than the Marketplace URN flow.
       </div>
 
-      <h3>Alurnya</h3>
+      <h3>The flow</h3>
       <ol>
-        <li>Buat VM Linux biasa di Azure sebagai sumber.</li>
-        <li>Bersihkan identitas VM dan ubah datasource cloud-init.</li>
-        <li>Hentikan VM, ekspor OS disk menjadi SAS URL.</li>
-        <li>Buat image Azure Local dari SAS URL itu.</li>
-        <li>Hapus VM sumber.</li>
+        <li>Create an ordinary Linux VM in Azure as the source.</li>
+        <li>Generalize it and change the cloud-init datasource.</li>
+        <li>Stop the VM and export its OS disk as a SAS URL.</li>
+        <li>Import that URL as an Azure Local image.</li>
+        <li>Delete the temporary VM.</li>
       </ol>
 
-      <h3>Langkah 2 — persiapan di dalam VM</h3>
+      <h3>Step 2 — preparation inside the VM</h3>
       <p>
-        Bagian paling krusial adalah mengubah datasource dari <code>Azure</code> ke <code>NoCloud</code>.
-        Tanpa itu, VM tidak akan menerima kredensial saat dibuat di Azure Local.
+        The critical part is switching the datasource from <code>Azure</code> to <code>NoCloud</code>. Without it the
+        VM will not receive its credentials when provisioned on Azure Local.
       </p>
 
       <div class="code">
-        <div class="code-head"><span class="code-lang">Bash</span><button class="copy-btn" type="button">Salin</button></div>
+        <div class="code-head"><span class="code-lang">Bash</span><button class="copy-btn" type="button">Copy</button></div>
 <pre>set -eu
 
 cloud-init clean
@@ -652,28 +741,28 @@ echo 'datasource_list: [ NoCloud ]' &gt; /etc/cloud/cloud.cfg.d/90_dpkg.cfg
 cat /etc/cloud/cloud.cfg.d/90_dpkg.cfg</pre>
       </div>
 
-      <p>Script itu bisa dijalankan tanpa SSH sama sekali, lewat Run Command:</p>
+      <p>This can run without exposing SSH at all, through Run Command:</p>
 
       <div class="code">
-        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
 <pre>az vm run-command invoke `
   -g &lt;PREP_RG&gt; -n &lt;PREP_VM&gt; `
   --command-id RunShellScript `
-  --scripts "@prep-ubuntu.sh" `
+  --scripts "@prep-linux-image.sh" `
   --query "value[0].message" -o tsv</pre>
       </div>
 
       <div class="note warn">
-        <strong>Dua jebakan di sini</strong>
-        Script yang dibuat di Windows berakhiran CRLF dan akan gagal di Linux dengan error <code>$'\r'</code>;
-        konversi ke LF dulu. Selain itu, script multi-baris yang ditempel langsung ke <code>--scripts</code>
-        akan diratakan jadi satu baris dan diam-diam tidak berfungsi — selalu pakai <code>"@file"</code>.
+        <strong>Two traps in this step</strong>
+        A script authored on Windows carries CRLF endings and fails on Linux with a <code>$'\r'</code> error, so
+        convert it to LF first. And a multi-line script pasted directly into <code>--scripts</code> is flattened into
+        a single line and silently does nothing — always pass <code>"@file"</code>.
       </div>
 
-      <h3>Langkah 3 dan 4 — ekspor disk lalu buat image</h3>
+      <h3>Steps 3 and 4 — export the disk and import the image</h3>
 
       <div class="code">
-        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
 <pre>az vm deallocate -g &lt;PREP_RG&gt; -n &lt;PREP_VM&gt;
 
 $diskId = az vm show -g &lt;PREP_RG&gt; -n &lt;PREP_VM&gt; `
@@ -684,7 +773,7 @@ $sas = (az disk grant-access --ids $diskId `
   --query accessSAS -o tsv | Out-String).Trim()
 
 az stack-hci-vm image create `
-  --subscription $sub --resource-group $rg `
+  --resource-group $rg `
   --custom-location $cl --location &lt;REGION&gt; `
   --name ubuntu2404 --os-type Linux `
   --image-path ('"' + $sas + '"') `
@@ -692,70 +781,147 @@ az stack-hci-vm image create `
       </div>
 
       <div class="note warn">
-        <strong>Nama propertinya <code>accessSAS</code>, bukan <code>accessSas</code></strong>
-        Kalau salah kapitalisasi, perintah tidak error — ia hanya mengembalikan string kosong,
-        lalu <code>image create</code> mengeluh spesifikasi image tidak lengkap. Gejalanya jauh dari penyebabnya.
+        <strong>The property is accessSAS, not accessSas</strong>
+        Getting the capitalisation wrong does not raise an error. It returns an empty string, and
+        <code>image create</code> then complains that the image specification is incomplete — a symptom far removed
+        from its cause.
       </div>
 
       <div class="note">
-        <strong>Bersihkan setelah selesai</strong>
-        Cabut akses disk dengan <code>az disk revoke-access</code> dan hapus resource group sementara
-        setelah image berstatus tersedia.
+        <strong>Clean up afterwards</strong>
+        Once the image reports 100 percent, run <code>az disk revoke-access</code> and delete the temporary resource group.
       </div>
     </section>
 
-    <!-- 8 -->
-    <section id="buat-vm">
-      <h2>8. Membuat VM</h2>
-      <p class="sub">Setelah image, logical network, dan storage path lengkap.</p>
+    <section id="create-vm">
+      <h2>9. Creating a VM</h2>
+      <p class="sub">With an image, a logical network, and a storage path in place.</p>
 
       <div class="code">
-        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
 <pre>az stack-hci-vm network nic create `
-  --subscription $sub --resource-group $rg `
+  --resource-group $rg `
   --custom-location $cl --location &lt;REGION&gt; `
   --name &lt;NIC_NAME&gt; `
   --subnet-id &lt;LNET_NAME&gt;
 
 az stack-hci-vm create `
-  --subscription $sub --resource-group $rg `
+  --resource-group $rg `
   --custom-location $cl --location &lt;REGION&gt; `
   --name &lt;VM_NAME&gt; `
   --image &lt;IMAGE_NAME&gt; `
   --admin-username &lt;USERNAME&gt; `
+  --authentication-type ssh `
+  --ssh-key-values "$env:USERPROFILE\.ssh\id_rsa.pub" `
+  --ssh-dest-key-path "/home/&lt;USERNAME&gt;/.ssh/authorized_keys" `
   --admin-password $env:VM_ADMIN_PASSWORD `
   --nics &lt;NIC_NAME&gt; `
-  --hardware-profile memory-mb=8192 processors=4 `
+  --hardware-profile memory-mb=4096 processors=2 `
   --storage-path-id $sp</pre>
       </div>
 
       <div class="note warn">
-        <strong>Jangan menaruh password di file atau riwayat perintah</strong>
-        Ambil dari variabel lingkungan yang diisi lewat <code>Read-Host -AsSecureString</code>,
-        dan hapus variabelnya setelah selesai. Password VM harus 12–123 karakter serta memenuhi
-        minimal tiga dari empat kategori: huruf besar, huruf kecil, angka, dan karakter khusus.
+        <strong>A password is still required for key based Linux logins</strong>
+        Even with <code>--authentication-type ssh</code>, the CLI requires <code>--admin-password</code> and
+        <code>--ssh-dest-key-path</code>. Generate a random value, pass it through an environment variable, and remove
+        the variable afterwards. Never place it in a file or in shell history. Passwords must be 12 to 123 characters
+        and satisfy at least three of: uppercase, lowercase, digit, special character.
+      </div>
+
+      <div class="note good">
+        <strong>Confirming success</strong>
+        The VM is ready when <code>provisioningState</code> is <code>Succeeded</code> and the network interface has
+        received an address from the pool, typically the first address of the range you defined.
       </div>
     </section>
 
-    <!-- 9 -->
-    <section id="arc-agent">
-      <h2>9. Update Arc agent</h2>
-      <p class="sub">Di Azure Local, aturannya berbeda dengan Arc-enabled server biasa.</p>
-
-      <div class="note warn">
-        <strong>Jangan update agent secara manual di node Azure Local</strong>
-        Dokumentasi Azure Local menyatakan Azure Connected Machine agent dan Arc Resource Bridge
-        diperbarui otomatis ke versi tervalidasi ketika sistem di-update, dan update di luar jalur resmi
-        tidak didukung karena berisiko bentrok dengan Application Control (WDAC).
-      </div>
+    <section id="aks">
+      <h2>10. AKS enabled by Azure Arc</h2>
+      <p class="sub">AKS reuses the same logical network, but validates it far more strictly than Arc VMs do.</p>
 
       <p>
-        Jadi banner Advisor "A newer Arc agent version is available" pada node Azure Local
-        <strong>tidak</strong> diselesaikan dengan menjalankan installer MSI. Jalurnya adalah solution update.
+        Kubernetes nodes are provisioned as VMs on Azure Local and draw addresses from the logical network. Static
+        allocation is the only supported mode, because Kubernetes requires node addresses to stay constant for the
+        lifetime of the cluster.
       </p>
 
       <div class="code">
-        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>$lnet = "/subscriptions/$sub/resourceGroups/$rg/providers/" +
+        "Microsoft.AzureStackHCI/logicalNetworks/&lt;LNET_NAME&gt;"
+
+az aksarc create `
+  --resource-group $rg `
+  --name &lt;AKS_NAME&gt; `
+  --custom-location $cl `
+  --vnet-ids $lnet `
+  --generate-ssh-keys `
+  --control-plane-count 1 `
+  --node-count 1</pre>
+      </div>
+
+      <h3>The admission webhook error</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">Error</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>admission webhook "vhybridakscluster.kb.io" denied the request:
+  "name": "LogicalNetworkValidation",
+  "message": "Logical network &lt;name&gt; does not have an ippool."</pre>
+      </div>
+
+      <p>
+        This is a pre-check, so it fires before anything is provisioned. The fix is to recreate the logical network
+        with <code>--ip-pool-start</code> and <code>--ip-pool-end</code>. Note that Microsoft's parameter tables
+        describe the pool as "optional but highly recommended" for Arc VMs, while AKS admission control treats it as
+        mandatory — which is why a network that works perfectly well for VMs can still be rejected by AKS.
+      </p>
+
+      <h3>Cross-VLAN requirements</h3>
+
+      <p>
+        When the management network and the AKS logical network sit on different VLANs, these ports must be open in
+        both directions or cluster creation fails during validation.
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Port</th><th>Direction</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">22</td><td>Management network to AKS VMs</td><td>Log collection for troubleshooting</td></tr>
+            <tr><td class="mono">6443</td><td>Management network to AKS VMs</td><td>Kubernetes API communication</td></tr>
+            <tr><td class="mono">55000</td><td>AKS VMs to cluster IP</td><td>Cloud Agent gRPC server</td></tr>
+            <tr><td class="mono">65000</td><td>AKS VMs to cluster IP</td><td>Cloud Agent gRPC authentication</td></tr>
+            <tr><td class="mono">40343</td><td>AKS VMs to cluster IP</td><td>Only when Arc gateway is enabled</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note">
+        <strong>DNS is a hard requirement</strong>
+        The DNS servers configured on the logical network must resolve the Azure Local cluster FQDN. If they cannot,
+        cluster creation fails with <code>CloudAgentConnectivityError</code>.
+      </div>
+    </section>
+
+    <section id="arc-agent">
+      <h2>11. Updating the Arc agent</h2>
+      <p class="sub">On Azure Local nodes the rules differ from ordinary Arc-enabled servers.</p>
+
+      <div class="note warn">
+        <strong>Do not update the agent manually on Azure Local nodes</strong>
+        Microsoft states that the Azure Connected Machine agent, the Arc resource bridge, and their dependencies are
+        updated automatically to the validated version when Azure Local itself is updated, and that out of band
+        updates of individual components are not supported because they can break compatibility with Application
+        Control for Windows.
+      </div>
+
+      <p>
+        So the Advisor banner reading "A newer Arc agent version is available" on an Azure Local node is
+        <strong>not</strong> resolved by running the MSI installer. The supported route is a solution update.
+      </p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
 <pre>$base = "https://management.azure.com/subscriptions/$sub/resourceGroups/$rg" +
         "/providers/Microsoft.AzureStackHCI/clusters/&lt;CLUSTER&gt;"
 
@@ -768,78 +934,131 @@ az rest --method get --url "$base/updates?api-version=2024-04-01" `
 
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Konteks</th><th>Cara update agent</th></tr></thead>
+          <thead><tr><th>Context</th><th>How to update the agent</th></tr></thead>
           <tbody>
-            <tr><td>Server Arc biasa</td><td>MSI, Microsoft Update, atau <code>azcmagent upgrade</code> (butuh agent 1.62+)</td></tr>
-            <tr><td>Node Azure Local</td><td>Hanya melalui solution update dari halaman Azure Local atau Azure Update Manager</td></tr>
+            <tr><td>Ordinary Arc-enabled server</td><td>MSI, Microsoft Update, or <code>azcmagent upgrade</code> (requires agent 1.62 or later)</td></tr>
+            <tr><td>Azure Local node</td><td>Solution update only, from the Azure Local resource page or Azure Update Manager</td></tr>
           </tbody>
         </table>
       </div>
 
       <div class="note">
-        <strong>Catatan tentang <code>azcmagent upgrade</code></strong>
-        Perintah ini hanya tersedia mulai agent versi 1.62. Pada versi lebih lama, perintahnya tidak ada —
-        sehingga pada node Azure Local yang tertinggal, satu-satunya jalur benar tetap solution update.
+        <strong>About azcmagent upgrade</strong>
+        The command only exists from agent version 1.62 onward. On an older Azure Local node the command is simply
+        absent, which reinforces that the solution update is the correct path.
       </div>
     </section>
 
-    <!-- 10 -->
-    <section id="gotcha">
-      <h2>10. Jebakan CLI di Windows</h2>
-      <p class="sub">Kesalahan berikut memakan waktu paling banyak justru karena tidak terlihat seperti error.</p>
+    <section id="pitfalls">
+      <h2>12. Windows CLI pitfalls</h2>
+      <p class="sub">These consumed the most time precisely because they do not look like errors.</p>
 
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Gejala</th><th>Penyebab</th><th>Solusi</th></tr></thead>
+          <thead><tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr></thead>
           <tbody>
             <tr>
               <td class="mono">xyz was unexpected at this time</td>
-              <td>JMESPath memakai tanda kurung, misalnya <code>contains(type,'Image')</code>. PowerShell hanya mengutip argumen yang mengandung spasi, sehingga cmd memecah tanda kurung.</td>
-              <td>Filter di sisi PowerShell dengan <code>Where-Object</code>, atau hindari tanda kurung di <code>--query</code>.</td>
+              <td>A JMESPath query containing parentheses, such as <code>contains(type,'Image')</code>. PowerShell only quotes arguments containing spaces, so cmd splits on the parentheses.</td>
+              <td>Filter in PowerShell with <code>Where-Object</code>, or avoid parentheses in <code>--query</code>.</td>
             </tr>
             <tr>
               <td class="mono">An empty pipe element is not allowed</td>
-              <td><code>foreach</code> dipipe langsung ke <code>Format-Table</code>.</td>
-              <td>Tampung dulu: <code>$rows = foreach (...) { ... }</code> lalu pipe <code>$rows</code>.</td>
+              <td>A <code>foreach</code> loop piped directly into <code>Format-Table</code>.</td>
+              <td>Capture first: <code>$rows = foreach (...) { ... }</code> then pipe <code>$rows</code>.</td>
             </tr>
             <tr>
               <td class="mono">$'\r': command not found</td>
-              <td>Script shell dibuat di Windows sehingga berakhiran CRLF.</td>
-              <td>Konversi ke LF sebelum dikirim ke mesin Linux.</td>
+              <td>A shell script authored on Windows with CRLF endings.</td>
+              <td>Convert to LF before sending it to a Linux machine.</td>
             </tr>
             <tr>
-              <td>Perintah sukses tetapi tidak melakukan apa pun</td>
-              <td>Script multi-baris ditempel langsung ke <code>--scripts</code> lalu diratakan jadi satu baris.</td>
-              <td>Selalu gunakan <code>--scripts "@file"</code>.</td>
+              <td>Command succeeds but does nothing</td>
+              <td>A multi-line script pasted into <code>--scripts</code> is flattened to one line.</td>
+              <td>Always use <code>--scripts "@file"</code>.</td>
             </tr>
             <tr>
               <td class="mono">Unsupported Media Type</td>
-              <td><code>az rest --method put</code> tanpa header tipe konten.</td>
-              <td>Tambahkan <code>--headers Content-Type=application/json</code>.</td>
+              <td><code>az rest --method put</code> without a content type header.</td>
+              <td>Add <code>--headers Content-Type=application/json</code>.</td>
             </tr>
             <tr>
-              <td>Body JSON ditolak walau valid</td>
-              <td>JSON inline kehilangan tanda kutip saat melewati pembungkus batch.</td>
-              <td>Simpan ke file lalu kirim dengan <code>--body "@file.json"</code>.</td>
+              <td>Valid JSON body rejected</td>
+              <td>Inline JSON loses its quotes passing through the batch wrapper.</td>
+              <td>Write it to a file and pass <code>--body "@file.json"</code>.</td>
+            </tr>
+            <tr>
+              <td>Empty value from a successful command</td>
+              <td>Wrong property capitalisation, for example <code>accessSas</code> instead of <code>accessSAS</code>.</td>
+              <td>Inspect property names before querying them.</td>
             </tr>
           </tbody>
         </table>
       </div>
     </section>
 
-    <!-- 11 -->
-    <section id="referensi">
-      <h2>11. Referensi</h2>
-      <p class="sub">Seluruh prosedur di halaman ini mengikuti dokumentasi resmi berikut.</p>
+    <section id="automation">
+      <h2>13. Automation script</h2>
+      <p class="sub">Everything in this runbook, as one idempotent PowerShell script.</p>
+
+      <p>
+        <code>Install-AzureLocalStack.ps1</code> in this repository performs the whole sequence and is safe to
+        re-run: each stage checks for existing resources and skips completed work.
+      </p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>.\Install-AzureLocalStack.ps1 `
+  -SubscriptionId &lt;SUBSCRIPTION_ID&gt; `
+  -ResourceGroup  &lt;RESOURCE_GROUP&gt; `
+  -ClusterName    &lt;CLUSTER_NAME&gt; `
+  -Location       australiaeast `
+  -CustomLocationName &lt;CUSTOM_LOCATION&gt; `
+  -IncludeLinuxImage `
+  -CreateVm `
+  -CreateAks</pre>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Stage</th><th>Behaviour</th></tr></thead>
+          <tbody>
+            <tr><td>Tooling</td><td>Verifies Azure CLI and installs the stack-hci-vm, customlocation, and aksarc extensions.</td></tr>
+            <tr><td>Providers</td><td>Registers all required providers, including Microsoft.EdgeMarketplace.</td></tr>
+            <tr><td>Control plane</td><td>Refuses to continue while deployment is running or the bridge is not <code>Running</code>.</td></tr>
+            <tr><td>Logical network</td><td>Creates it with an IP pool, and warns if an existing network lacks one.</td></tr>
+            <tr><td>Windows image</td><td>Classifies Marketplace failures into registration versus availability.</td></tr>
+            <tr><td>Linux image</td><td>Provisions a prep VM with no inbound rules, generalizes it, exports the disk, imports the VHD.</td></tr>
+            <tr><td>VM</td><td>Uses your SSH key for Linux; prompts securely for a Windows password.</td></tr>
+            <tr><td>AKS</td><td>Validates the IP pool before calling create, so failures are explained rather than raw webhook errors.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note">
+        <strong>Secrets</strong>
+        The script never writes a credential to disk. Linux VMs authenticate with your existing SSH public key, and
+        any generated password exists only for the lifetime of the command.
+      </div>
+    </section>
+
+    <section id="references">
+      <h2>14. References</h2>
+      <p class="sub">Every procedure here follows the official documentation below.</p>
       <ul>
+        <li><a href="https://learn.microsoft.com/azure/azure-arc/resource-bridge/overview">What is Azure Arc resource bridge?</a></li>
         <li><a href="https://learn.microsoft.com/azure/azure-local/manage/azure-arc-vm-management-prerequisites">Review prerequisites for Azure Local VMs enabled by Azure Arc</a></li>
+        <li><a href="https://learn.microsoft.com/azure/azure-local/manage/azure-arc-vm-management-networking">Azure Local VM management networking</a></li>
+        <li><a href="https://learn.microsoft.com/azure/azure-local/manage/create-logical-networks">Create logical networks for Azure Local VMs</a></li>
         <li><a href="https://learn.microsoft.com/azure/azure-local/manage/virtual-machine-image-azure-marketplace">Create Azure Local VM image using Azure Marketplace images</a></li>
         <li><a href="https://learn.microsoft.com/azure/azure-local/manage/virtual-machine-azure-marketplace-ubuntu">Prepare Ubuntu Azure Marketplace image for Azure Local VMs</a></li>
-        <li><a href="https://learn.microsoft.com/azure/azure-local/manage/create-logical-networks">Create logical networks for Azure Local VMs</a></li>
         <li><a href="https://learn.microsoft.com/azure/azure-local/manage/create-arc-virtual-machines">Create Azure Local virtual machines enabled by Azure Arc</a></li>
+        <li><a href="https://learn.microsoft.com/azure/aks/aksarc/aks-hci-network-system-requirements">AKS on Azure Local network requirements</a></li>
+        <li><a href="https://learn.microsoft.com/azure/aks/aksarc/aks-hci-ip-address-planning">IP address planning for AKS on Azure Local</a></li>
+        <li><a href="https://learn.microsoft.com/azure/aks/aksarc/network-validation-errors">Troubleshoot AKS network validation errors</a></li>
         <li><a href="https://learn.microsoft.com/azure/azure-local/update/about-updates-23h2">About updates for Azure Local</a></li>
         <li><a href="https://learn.microsoft.com/azure/azure-arc/servers/manage-agent">Manage Azure Connected Machine agent versions</a></li>
-        <li><a href="https://learn.microsoft.com/azure/azure-arc/resource-bridge/overview">What is Azure Arc resource bridge?</a></li>
+        <li><a href="https://learn.microsoft.com/azure/architecture/hybrid/azure-local-baseline">Azure Local baseline reference architecture</a></li>
       </ul>
     </section>
   </main>
@@ -848,30 +1067,29 @@ az rest --method get --url "$base/updates?api-version=2024-04-01" `
 <footer>
   <div class="footer-inner">
     <p>
-      Runbook ini disusun dari satu siklus deployment nyata. Seluruh identitas subscription, tenant, dan kredensial
-      sudah diganti placeholder. Perintah ditulis untuk PowerShell di Windows.
+      Compiled from one real deployment cycle. All subscription, tenant, and credential values have been replaced
+      with placeholders. Commands target PowerShell on Windows. Architecture diagrams are reproduced from Microsoft
+      Learn and remain the property of Microsoft.
     </p>
   </div>
 </footer>
 
 <script>
 (() => {
-  // Copy buttons
   document.querySelectorAll('.copy-btn').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const pre = btn.closest('.code').querySelector('pre');
       try {
         await navigator.clipboard.writeText(pre.innerText);
         const prev = btn.textContent;
-        btn.textContent = 'Tersalin';
+        btn.textContent = 'Copied';
         setTimeout(() => { btn.textContent = prev; }, 1600);
       } catch {
-        btn.textContent = 'Gagal menyalin';
+        btn.textContent = 'Copy failed';
       }
     });
   });
 
-  // Scrollspy
   const links = Array.from(document.querySelectorAll('nav.toc a'));
   const map = new Map();
   links.forEach((a) => {
@@ -891,7 +1109,6 @@ az rest --method get --url "$base/updates?api-version=2024-04-01" `
 
   map.forEach((_, el) => obs.observe(el));
 
-  // Mobile nav
   const toggle = document.getElementById('navToggle');
   const toc = document.getElementById('toc');
   toggle.addEventListener('click', () => {
