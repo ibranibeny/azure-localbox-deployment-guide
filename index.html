@@ -1,0 +1,910 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Runbook Azure Local — Deployment, Diagnosa VM, dan VM Image</title>
+<meta name="description" content="Runbook operasional Azure Local: prasyarat, memantau deployment, mendiagnosa 'No Azure Local VMs to display', membuat VM image Windows dan Linux, serta cara update Arc agent yang didukung." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23b11f4b'/%3E%3Cpath d='M4 11.5 8 4l4 7.5H9.6L8 8.4l-1.6 3.1z' fill='white'/%3E%3C/svg%3E" />
+<script>
+  (() => {
+    const param = new URLSearchParams(window.location.search).get("scoutTheme");
+    const theme =
+      param || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme", theme);
+  })();
+</script>
+<style>
+:root {
+  color-scheme: light;
+  --cp-bg: #f7f4ef;
+  --cp-bg-elevated: #fcfbf8;
+  --cp-surface: #ffffff;
+  --cp-surface-soft: #f5f5f5;
+  --cp-border: #dedede;
+  --cp-border-strong: #919191;
+  --cp-text: #242424;
+  --cp-text-muted: #5c5c5c;
+  --cp-text-soft: #6f6f6f;
+  --cp-accent: #b11f4b;
+  --cp-accent-hover: #9a1a41;
+  --cp-accent-soft: rgba(177, 31, 75, 0.08);
+  --cp-accent-fg: #ffffff;
+  --cp-success: #16a34a;
+  --cp-danger: #dc2626;
+  --cp-warning: #f59e0b;
+  --cp-link: #0078d4;
+  --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.12);
+  --cp-overlay: rgba(255, 255, 255, 0.8);
+  --cp-panel: rgba(255, 255, 255, 0.86);
+  --cp-panel-strong: rgba(255, 255, 255, 0.96);
+  --cp-sheen: rgba(255, 255, 255, 0.55);
+  --cp-highlight: rgba(177, 31, 75, 0.12);
+}
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --cp-bg: #3d3b3a;
+  --cp-bg-elevated: #343231;
+  --cp-surface: #292929;
+  --cp-surface-soft: #2e2e2e;
+  --cp-border: #474747;
+  --cp-border-strong: #5f5f5f;
+  --cp-text: #dedede;
+  --cp-text-muted: #919191;
+  --cp-text-soft: #b0b0b0;
+  --cp-accent: #fd8ea1;
+  --cp-accent-hover: #fb7b91;
+  --cp-accent-soft: rgba(253, 142, 161, 0.14);
+  --cp-accent-fg: #1a1a1a;
+  --cp-success: #4ade80;
+  --cp-danger: #f87171;
+  --cp-warning: #fbbf24;
+  --cp-link: #4da6ff;
+  --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+  --cp-overlay: rgba(41, 41, 41, 0.88);
+  --cp-panel: rgba(41, 41, 41, 0.72);
+  --cp-panel-strong: rgba(41, 41, 41, 0.96);
+  --cp-sheen: rgba(255, 255, 255, 0.04);
+  --cp-highlight: rgba(253, 142, 161, 0.12);
+}
+
+* { box-sizing: border-box; }
+
+html { overflow-x: hidden; }
+
+body {
+  margin: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  background: var(--cp-bg);
+  color: var(--cp-text);
+  font-family: "Segoe UI", Aptos, Calibri, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+code, pre, .mono { font-family: Consolas, "Courier New", Courier, monospace; }
+
+a { color: var(--cp-link); }
+
+.layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 32px; max-width: 1240px; margin: 0 auto; padding: 0 24px 96px; }
+
+/* ---------- Masthead ---------- */
+.masthead { border-bottom: 1px solid var(--cp-border); background: var(--cp-bg-elevated); }
+.masthead-inner { max-width: 1240px; margin: 0 auto; padding: 40px 24px 32px; }
+.eyebrow { font-size: 0.75rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--cp-text-muted); margin: 0 0 12px; }
+h1 { font-size: clamp(1.9rem, 4vw, 2.9rem); line-height: 1.15; margin: 0 0 12px; font-weight: 600; letter-spacing: -0.02em; }
+.lede { font-size: 1.05rem; color: var(--cp-text-muted); max-width: 68ch; margin: 0 0 24px; }
+.meta-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font-size: 0.78rem; padding: 4px 10px; border: 1px solid var(--cp-border); border-radius: 999px; color: var(--cp-text-muted); background: var(--cp-surface); }
+
+/* ---------- Readiness rail (signature) ---------- */
+.rail { margin-top: 32px; border: 1px solid var(--cp-border); border-radius: 16px; background: var(--cp-surface); padding: 20px; box-shadow: 0 0 2px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.14); }
+.rail h2 { margin: 0 0 4px; font-size: 1rem; font-weight: 600; }
+.rail p { margin: 0 0 18px; color: var(--cp-text-muted); font-size: 0.9rem; }
+.rail-track { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+.rail-cell { border: 1px solid var(--cp-border); border-radius: 0.625rem; padding: 14px; background: var(--cp-surface-soft); }
+.rail-cell .layer { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--cp-text-muted); }
+.rail-cell .what { font-weight: 600; margin: 6px 0 4px; }
+.rail-cell .why { font-size: 0.85rem; color: var(--cp-text-muted); }
+.rail-cell.gate { border-color: var(--cp-accent); background: var(--cp-accent-soft); }
+.rail-note { margin-top: 14px; font-size: 0.88rem; color: var(--cp-text-muted); border-left: 3px solid var(--cp-accent); padding-left: 12px; }
+
+/* ---------- Nav ---------- */
+nav.toc { position: sticky; top: 24px; align-self: start; max-height: calc(100vh - 48px); overflow: auto; padding-top: 40px; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; counter-reset: step; }
+nav.toc li { counter-increment: step; }
+nav.toc a { display: block; padding: 7px 10px 7px 34px; border-radius: 0.625rem; color: var(--cp-text-muted); text-decoration: none; font-size: 0.88rem; position: relative; }
+nav.toc a::before { content: counter(step, decimal-leading-zero); position: absolute; left: 10px; font-family: Consolas, "Courier New", monospace; font-size: 0.72rem; color: var(--cp-text-soft); top: 9px; }
+nav.toc a:hover { background: var(--cp-surface-soft); color: var(--cp-text); }
+nav.toc a.active { background: var(--cp-accent-soft); color: var(--cp-accent); font-weight: 600; }
+nav.toc a:focus-visible, .copy-btn:focus-visible, .nav-toggle:focus-visible { outline: 2px solid var(--cp-accent); outline-offset: 2px; }
+
+.nav-toggle { display: none; }
+
+main { padding-top: 40px; min-width: 0; }
+
+section { margin-bottom: 56px; scroll-margin-top: 24px; }
+section > h2 { font-size: 1.45rem; font-weight: 600; margin: 0 0 6px; letter-spacing: -0.01em; }
+section > .sub { color: var(--cp-text-muted); margin: 0 0 20px; }
+h3 { font-size: 1.02rem; font-weight: 600; margin: 26px 0 8px; }
+
+p { margin: 0 0 14px; }
+ul, ol { margin: 0 0 14px; padding-left: 22px; }
+li { margin-bottom: 6px; }
+
+/* ---------- Code ---------- */
+.code { position: relative; border: 1px solid var(--cp-border); border-radius: 0.625rem; background: var(--cp-surface); margin: 0 0 16px; overflow: hidden; }
+.code-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--cp-border); background: var(--cp-surface-soft); }
+.code-lang { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--cp-text-muted); }
+.copy-btn { font: inherit; font-size: 0.76rem; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--cp-border); background: var(--cp-surface); color: var(--cp-text-muted); cursor: pointer; }
+.copy-btn:hover { border-color: var(--cp-accent); color: var(--cp-accent); }
+pre { margin: 0; padding: 14px; overflow-x: auto; font-size: 0.84rem; line-height: 1.55; }
+
+/* ---------- Callouts ---------- */
+.note { border-left: 3px solid var(--cp-link); background: var(--cp-surface); border-radius: 0 0.625rem 0.625rem 0; padding: 14px 16px; margin: 0 0 16px; font-size: 0.92rem; }
+.warn { border-left-color: var(--cp-danger); }
+.good { border-left-color: var(--cp-success); }
+.note strong { display: block; margin-bottom: 4px; }
+
+/* ---------- Tables ---------- */
+.table-wrap { overflow-x: auto; margin: 0 0 16px; border: 1px solid var(--cp-border); border-radius: 0.625rem; }
+table { border-collapse: collapse; width: 100%; font-size: 0.88rem; background: var(--cp-surface); }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--cp-border); vertical-align: top; }
+th { background: var(--cp-surface-soft); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--cp-text-muted); }
+tbody tr:last-child td { border-bottom: none; }
+
+.state { font-family: Consolas, "Courier New", monospace; font-size: 0.78rem; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.state.ok { background: var(--cp-accent-soft); color: var(--cp-success); border: 1px solid var(--cp-success); }
+.state.bad { background: var(--cp-accent-soft); color: var(--cp-danger); border: 1px solid var(--cp-danger); }
+.state.wait { background: var(--cp-accent-soft); color: var(--cp-warning); border: 1px solid var(--cp-warning); }
+
+/* ---------- Figures (reproduksi tampilan) ---------- */
+figure { margin: 0 0 18px; border: 1px solid var(--cp-border); border-radius: 0.625rem; overflow: hidden; background: var(--cp-surface); }
+figure svg { display: block; width: 100%; height: auto; }
+figcaption { font-size: 0.8rem; color: var(--cp-text-muted); padding: 10px 12px; border-top: 1px solid var(--cp-border); background: var(--cp-surface-soft); }
+
+/* ---------- Details ---------- */
+details { border: 1px solid var(--cp-border); border-radius: 0.625rem; padding: 12px 14px; margin: 0 0 14px; background: var(--cp-surface); }
+summary { cursor: pointer; font-weight: 600; font-size: 0.92rem; }
+details[open] summary { margin-bottom: 10px; }
+
+footer { border-top: 1px solid var(--cp-border); background: var(--cp-bg-elevated); }
+.footer-inner { max-width: 1240px; margin: 0 auto; padding: 28px 24px 48px; color: var(--cp-text-muted); font-size: 0.85rem; }
+
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; gap: 0; }
+  nav.toc { position: static; max-height: none; padding-top: 16px; display: none; }
+  nav.toc.open { display: block; }
+  .nav-toggle { display: inline-block; margin: 20px 0 0; font: inherit; font-size: 0.85rem; padding: 8px 14px; border-radius: 0.625rem; border: 1px solid var(--cp-border); background: var(--cp-surface); color: var(--cp-text); cursor: pointer; }
+  .rail-track { grid-template-columns: 1fr; }
+  main { padding-top: 24px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <p class="eyebrow">Runbook Operasional</p>
+    <h1>Azure Local: dari deployment sampai VM pertama</h1>
+    <p class="lede">
+      Panduan berbasis kejadian nyata. Fokusnya pada satu pertanyaan yang paling sering menyesatkan:
+      kenapa tombol <em>Create VM</em> tetap kosong padahal host sudah Windows Server 24H2 dan status Arc sudah <em>Connected</em>.
+    </p>
+    <div class="meta-row">
+      <span class="chip">Azure Local 23H2 / 24H2</span>
+      <span class="chip">Azure CLI</span>
+      <span class="chip">Arc Resource Bridge</span>
+      <span class="chip">Terverifikasi 21 Agustus 2026</span>
+    </div>
+
+    <div class="rail">
+      <h2>Peta kesiapan: tiga lapisan yang sering dikira satu</h2>
+      <p>Kegagalan paling umum terjadi karena lapisan 1 dianggap membuktikan lapisan 3. Padahal tidak.</p>
+      <div class="rail-track">
+        <div class="rail-cell">
+          <div class="layer">Lapisan 1 — Host</div>
+          <div class="what">OS 24H2, node Connected</div>
+          <div class="why">Membuktikan mesin terdaftar ke Arc. Tidak membuktikan apa pun soal kemampuan membuat VM.</div>
+        </div>
+        <div class="rail-cell gate">
+          <div class="layer">Lapisan 2 — Control plane</div>
+          <div class="what">Resource Bridge + Custom Location</div>
+          <div class="why">Ini gerbang sebenarnya. Selama belum ada, portal menampilkan empty state yang membingungkan.</div>
+        </div>
+        <div class="rail-cell">
+          <div class="layer">Lapisan 3 — Resource VM</div>
+          <div class="what">Logical network, storage path, VM image</div>
+          <div class="why">Tanpa image, tombol Create VM ada tapi tidak ada yang bisa dipilih.</div>
+        </div>
+      </div>
+      <p class="rail-note">
+        Aturan praktis: kalau portal bilang <em>"No Azure Local VMs to display"</em>, jangan periksa versi OS lebih dulu. Periksa lapisan 2.
+      </p>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" id="toc" aria-label="Daftar isi">
+    <ol>
+      <li><a href="#prasyarat">Prasyarat Azure</a></li>
+      <li><a href="#deploy">Memantau deployment</a></li>
+      <li><a href="#empty">Diagnosa "No VMs to display"</a></li>
+      <li><a href="#verifikasi">Verifikasi control plane</a></li>
+      <li><a href="#lnet">Logical network</a></li>
+      <li><a href="#image-win">VM image Windows</a></li>
+      <li><a href="#image-linux">VM image Linux</a></li>
+      <li><a href="#buat-vm">Membuat VM</a></li>
+      <li><a href="#arc-agent">Update Arc agent</a></li>
+      <li><a href="#gotcha">Jebakan CLI di Windows</a></li>
+      <li><a href="#referensi">Referensi</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <button class="nav-toggle" id="navToggle" aria-expanded="false" aria-controls="toc">Daftar isi</button>
+
+    <!-- 1 -->
+    <section id="prasyarat">
+      <h2>1. Prasyarat Azure</h2>
+      <p class="sub">Dikerjakan sekali per subscription. Melewatkan satu provider akan muncul sebagai error yang tidak jelas jauh di kemudian hari.</p>
+
+      <p>Daftarkan resource provider berikut. <code>Microsoft.EdgeMarketplace</code> paling sering terlewat karena baru dibutuhkan saat membuat VM image, bukan saat deployment.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+<pre>az provider register --namespace Microsoft.AzureStackHCI
+az provider register --namespace Microsoft.HybridCompute
+az provider register --namespace Microsoft.HybridConnectivity
+az provider register --namespace Microsoft.ExtendedLocation
+az provider register --namespace Microsoft.ResourceConnector
+az provider register --namespace Microsoft.KubernetesConfiguration
+az provider register --namespace Microsoft.EdgeMarketplace</pre>
+      </div>
+
+      <p>Verifikasi semuanya sudah <code>Registered</code> sebelum lanjut:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+<pre>$providers = 'Microsoft.AzureStackHCI','Microsoft.HybridCompute',
+             'Microsoft.ExtendedLocation','Microsoft.ResourceConnector',
+             'Microsoft.EdgeMarketplace'
+
+$rows = foreach ($p in $providers) {
+    $state = az provider show -n $p --query registrationState -o tsv
+    [pscustomobject]@{ Provider = $p; State = $state }
+}
+$rows | Format-Table -AutoSize</pre>
+      </div>
+
+      <div class="note">
+        <strong>Kenapa ini penting</strong>
+        Tanpa <code>Microsoft.EdgeMarketplace</code>, pembuatan VM image gagal dengan
+        <code>SubscriptionNotRegistered</code> — pesan yang muncul berjam-jam setelah deployment selesai,
+        sehingga mudah dikira masalah cluster.
+      </div>
+
+      <h3>Peran RBAC</h3>
+      <ul>
+        <li><strong>Azure Connected Machine Onboarding</strong> dan <strong>Azure Connected Machine Resource Administrator</strong> pada resource group tempat node didaftarkan.</li>
+        <li><strong>Azure Connected Machine Resource Manager</strong> untuk resource provider app <code>Microsoft.AzureStackHCI</code> pada resource group tempat image diunduh.</li>
+      </ul>
+    </section>
+
+    <!-- 2 -->
+    <section id="deploy">
+      <h2>2. Memantau deployment</h2>
+      <p class="sub">Deployment Azure Local berjalan sekitar 54 tahap. Yang perlu dipahami: statusnya bertingkat, dan ARM tidak menceritakan semuanya.</p>
+
+      <p>Status di level resource group hanya bilang <code>Running</code>. Detail sebenarnya ada di resource <code>deploymentSettings</code>:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+<pre>$sub = "&lt;SUBSCRIPTION_ID&gt;"
+$rg  = "&lt;RESOURCE_GROUP&gt;"
+$cluster = "&lt;CLUSTER_NAME&gt;"
+
+$id = "/subscriptions/$sub/resourceGroups/$rg/providers/" +
+      "Microsoft.AzureStackHCI/clusters/$cluster/deploymentSettings/default"
+
+az resource show --ids $id --api-version 2024-04-01 -o json</pre>
+      </div>
+
+      <p>Di dalam responsnya ada daftar tahap lengkap dengan <code>status</code>, <code>startTimeUtc</code>, dan <code>endTimeUtc</code>. Contoh potongan saat deployment masih berjalan:</p>
+
+      <figure>
+        <svg viewBox="0 0 900 250" role="img" aria-label="Reproduksi daftar tahap deployment Azure Local dengan status Success dan In Progress">
+          <rect width="900" height="250" fill="var(--cp-surface)"/>
+          <g font-family="Consolas, monospace" font-size="13">
+            <rect x="0" y="0" width="900" height="28" fill="var(--cp-surface-soft)"/>
+            <text x="16" y="19" fill="var(--cp-text-muted)">fullStepIndex</text>
+            <text x="130" y="19" fill="var(--cp-text-muted)">name</text>
+            <text x="600" y="19" fill="var(--cp-text-muted)">status</text>
+
+            <text x="16" y="52" fill="var(--cp-text)">0.37</text>
+            <text x="130" y="52" fill="var(--cp-text)">Reserve and migrate Network Controller REST IP</text>
+            <circle cx="608" cy="48" r="5" fill="var(--cp-success)"/>
+            <text x="622" y="52" fill="var(--cp-success)">Success</text>
+
+            <text x="16" y="82" fill="var(--cp-text)">0.38</text>
+            <text x="130" y="82" fill="var(--cp-text)">Prepare to create infrastructure VMs</text>
+            <circle cx="608" cy="78" r="5" fill="var(--cp-success)"/>
+            <text x="622" y="82" fill="var(--cp-success)">Success</text>
+
+            <text x="16" y="112" fill="var(--cp-text)">0.39</text>
+            <text x="130" y="112" fill="var(--cp-text)">Verify Cluster DNS Resolution</text>
+            <circle cx="608" cy="108" r="5" fill="var(--cp-success)"/>
+            <text x="622" y="112" fill="var(--cp-success)">Success</text>
+
+            <rect x="0" y="126" width="900" height="30" fill="var(--cp-highlight)"/>
+            <text x="16" y="146" fill="var(--cp-text)">0.40</text>
+            <text x="130" y="146" fill="var(--cp-text)" font-weight="bold">Deploy Arc infrastructure components</text>
+            <circle cx="608" cy="142" r="5" fill="var(--cp-warning)"/>
+            <text x="622" y="146" fill="var(--cp-warning)">InProgress</text>
+
+            <text x="16" y="176" fill="var(--cp-text-muted)">0.41</text>
+            <text x="130" y="176" fill="var(--cp-text-muted)">Log environment validation results</text>
+            <text x="622" y="176" fill="var(--cp-text-muted)">Unknown</text>
+
+            <text x="16" y="206" fill="var(--cp-text-muted)">0.42</text>
+            <text x="130" y="206" fill="var(--cp-text-muted)">Send telemetry</text>
+            <text x="622" y="206" fill="var(--cp-text-muted)">Unknown</text>
+
+            <text x="16" y="236" fill="var(--cp-text-muted)">0.43</text>
+            <text x="130" y="236" fill="var(--cp-text-muted)">Turn on SMB encryption</text>
+            <text x="622" y="236" fill="var(--cp-text-muted)">Unknown</text>
+          </g>
+        </svg>
+        <figcaption>Reproduksi tampilan Settings &gt; Deployment. Tahap 0.40 adalah titik yang membuat menu VM belum berfungsi. Tahap sesudahnya berstatus <code>Unknown</code> karena memang belum dijalankan — ini normal, bukan error.</figcaption>
+      </figure>
+
+      <div class="note good">
+        <strong>Jangan panik melihat "Unknown"</strong>
+        <code>Unknown</code> berarti tahap belum dimulai. Yang menandakan masalah adalah <code>Failed</code>.
+        Deployment dua node normalnya memakan waktu sekitar 2,5 jam.
+      </div>
+    </section>
+
+    <!-- 3 -->
+    <section id="empty">
+      <h2>3. Diagnosa "No Azure Local VMs to display"</h2>
+      <p class="sub">Portal menampilkan dua pesan berbeda untuk kondisi ini, dan salah satunya menyesatkan.</p>
+
+      <figure>
+        <svg viewBox="0 0 900 210" role="img" aria-label="Reproduksi dua pesan kosong di halaman Virtual machines Azure Local">
+          <rect width="900" height="210" fill="var(--cp-surface)"/>
+          <rect x="0" y="0" width="900" height="34" fill="var(--cp-accent-soft)"/>
+          <circle cx="22" cy="17" r="7" fill="var(--cp-danger)"/>
+          <text x="40" y="22" font-family="Segoe UI, sans-serif" font-size="13" fill="var(--cp-text)">An issue occurred during cluster deployment.</text>
+
+          <text x="450" y="80" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="17" font-weight="600" fill="var(--cp-text)">No Azure Local VMs to display</text>
+          <text x="450" y="108" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="12.5" fill="var(--cp-text-muted)">One or more Arc infrastructure components are offline on this cluster.</text>
+          <text x="450" y="128" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="12.5" fill="var(--cp-text-muted)">Check Settings &gt; Deployment to ensure all steps show 'Success'.</text>
+
+          <rect x="120" y="150" width="660" height="44" rx="8" fill="var(--cp-surface-soft)" stroke="var(--cp-border)"/>
+          <text x="450" y="170" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="12.5" fill="var(--cp-text-muted)">Versi lain dari pesan ini menyebut "Azure Local VMs are only supported on</text>
+          <text x="450" y="187" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="12.5" fill="var(--cp-text-muted)">Azure Local version 23H2 and beyond" — abaikan jika OS Anda sudah 24H2.</text>
+        </svg>
+        <figcaption>Reproduksi empty state. Pesan "Arc infrastructure components are offline" akurat. Pesan tentang versi 23H2 menyesatkan pada sistem 24H2.</figcaption>
+      </figure>
+
+      <h3>Pohon keputusan</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Periksa</th><th>Perintah</th><th>Kesimpulan bila tidak sesuai</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Deployment selesai?</td>
+              <td class="mono">deploymentSettings/default</td>
+              <td>Masih ada tahap <code>InProgress</code> — tunggu, jangan intervensi.</td>
+            </tr>
+            <tr>
+              <td>Resource Bridge ada dan <code>Running</code>?</td>
+              <td class="mono">Microsoft.ResourceConnector/appliances</td>
+              <td><code>WaitingForHeartbeat</code> berarti appliance belum lapor ke Azure.</td>
+            </tr>
+            <tr>
+              <td>Custom location ada?</td>
+              <td class="mono">Microsoft.ExtendedLocation/customLocations</td>
+              <td>Belum ada berarti control plane VM belum terbentuk.</td>
+            </tr>
+            <tr>
+              <td>Logical network ada?</td>
+              <td class="mono">Microsoft.AzureStackHCI/logicalNetworks</td>
+              <td>Hanya ada InfraLNET berarti belum ada jaringan untuk VM workload.</td>
+            </tr>
+            <tr>
+              <td>VM image ada?</td>
+              <td class="mono">az stack-hci-vm image list</td>
+              <td>Kosong berarti Create VM tidak punya pilihan image.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note warn">
+        <strong>Yang tidak membuktikan apa pun</strong>
+        Node berstatus <code>Connected</code> dengan OS <code>24H2</code>. Itu hanya berarti Arc agent berjalan.
+        Kemampuan membuat VM ditentukan oleh Resource Bridge dan custom location, bukan oleh versi OS.
+      </div>
+    </section>
+
+    <!-- 4 -->
+    <section id="verifikasi">
+      <h2>4. Verifikasi control plane</h2>
+      <p class="sub">Satu blok perintah untuk memastikan seluruh lapisan 2 dan 3 benar-benar ada.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+<pre>$sub = "&lt;SUBSCRIPTION_ID&gt;"
+$rg  = "&lt;RESOURCE_GROUP&gt;"
+
+$all = az resource list --subscription $sub -g $rg -o json | ConvertFrom-Json
+
+$want = 'Microsoft.ResourceConnector/appliances',
+        'Microsoft.ExtendedLocation/customLocations',
+        'Microsoft.AzureStackHCI/logicalNetworks',
+        'Microsoft.AzureStackHCI/storageContainers',
+        'Microsoft.AzureStackHCI/galleryImages',
+        'Microsoft.AzureStackHCI/marketplaceGalleryImages'
+
+$all |
+  Where-Object { $want -contains $_.type } |
+  Select-Object name, type |
+  Sort-Object type |
+  Format-Table -AutoSize</pre>
+      </div>
+
+      <p>Kondisi sehat terlihat seperti ini:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Resource</th><th>Tipe</th><th>Status yang diharapkan</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">&lt;cluster&gt;-arcbridge</td><td class="mono">appliances</td><td><span class="state ok">Running</span></td></tr>
+            <tr><td class="mono">&lt;custom-location&gt;</td><td class="mono">customLocations</td><td><span class="state ok">Succeeded</span></td></tr>
+            <tr><td class="mono">&lt;cluster&gt;-InfraLNET</td><td class="mono">logicalNetworks</td><td><span class="state ok">Succeeded</span></td></tr>
+            <tr><td class="mono">UserStorage1 / UserStorage2</td><td class="mono">storageContainers</td><td><span class="state ok">Succeeded</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note">
+        <strong>Membedakan Succeeded dari Running</strong>
+        Pada Arc Resource Bridge, <code>provisioningState</code> bisa <code>Succeeded</code> sementara
+        <code>status</code> masih <code>WaitingForHeartbeat</code>. Yang menentukan kesiapan adalah <code>status</code>.
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+<pre>az resource show `
+  --ids "/subscriptions/$sub/resourceGroups/$rg/providers/Microsoft.ResourceConnector/appliances/&lt;CLUSTER&gt;-arcbridge" `
+  --api-version 2022-10-27 `
+  --query "properties.status" -o tsv</pre>
+      </div>
+    </section>
+
+    <!-- 5 -->
+    <section id="lnet">
+      <h2>5. Logical network</h2>
+      <p class="sub">InfraLNET yang dibuat otomatis bukan untuk VM workload.</p>
+
+      <p>
+        Setelah deployment, biasanya hanya ada satu logical network berakhiran <code>-InfraLNET</code>.
+        Jaringan itu dipakai Arc Resource Bridge dan hanya menyediakan segelintir alamat IP.
+        VM workload memerlukan logical network tersendiri.
+      </p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+<pre>$cl = "/subscriptions/$sub/resourceGroups/$rg/providers/" +
+      "Microsoft.ExtendedLocation/customLocations/&lt;CUSTOM_LOCATION&gt;"
+
+az stack-hci-vm network lnet create `
+  --subscription $sub `
+  --resource-group $rg `
+  --custom-location $cl `
+  --location &lt;REGION&gt; `
+  --name &lt;LNET_NAME&gt; `
+  --vm-switch-name '"ConvergedSwitch(compute_management)"' `
+  --ip-allocation-method static `
+  --address-prefixes 192.168.200.0/24 `
+  --gateway 192.168.200.1 `
+  --dns-servers &lt;DNS_IP&gt; `
+  --vlan 200</pre>
+      </div>
+
+      <div class="note warn">
+        <strong>Perhatikan tanda kutip pada nama switch</strong>
+        <code>ConvergedSwitch(compute_management)</code> mengandung tanda kurung. Di Windows,
+        <code>az</code> adalah pembungkus batch, sehingga tanda kurung tanpa kutip akan dipecah oleh cmd.
+        Bungkus dengan <code>'"..."'</code> seperti contoh di atas.
+      </div>
+    </section>
+
+    <!-- 6 -->
+    <section id="image-win">
+      <h2>6. VM image Windows</h2>
+      <p class="sub">Windows bisa ditarik langsung dari Azure Marketplace lewat URN.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+<pre>$sp = "/subscriptions/$sub/resourceGroups/$rg/providers/" +
+      "Microsoft.AzureStackHCI/storageContainers/&lt;STORAGE_PATH&gt;"
+
+az stack-hci-vm image create `
+  --subscription $sub `
+  --resource-group $rg `
+  --custom-location $cl `
+  --location &lt;REGION&gt; `
+  --name ws2022 `
+  --os-type Windows `
+  --publisher microsoftwindowsserver `
+  --offer windowsserver `
+  --sku 2022-datacenter-azure-edition `
+  --storage-path-id $sp</pre>
+      </div>
+
+      <p>Pantau progres unduhan, karena perintah di atas hanya mengembalikan <code>Accepted</code> di awal:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+<pre>$id = "/subscriptions/$sub/resourceGroups/$rg/providers/" +
+      "Microsoft.AzureStackHCI/marketplaceGalleryImages/ws2022"
+
+$d = az resource show --ids $id --api-version 2025-04-01-preview -o json | ConvertFrom-Json
+
+[pscustomobject]@{
+  State   = $d.properties.provisioningState
+  Percent = $d.properties.status.progressPercentage
+  Version = $d.properties.version.name
+  Error   = $d.properties.status.errorCode
+} | Format-List</pre>
+      </div>
+
+      <h3>Kalau gagal dengan GenerateTokenFromEdgeMarketplaceServiceFailed</h3>
+
+      <p>Error ini punya dua penyebab yang sangat berbeda. Bedakan dari isi pesannya:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Isi pesan</th><th>Arti</th><th>Tindakan</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="mono">SubscriptionNotRegistered</td>
+              <td>Provider <code>Microsoft.EdgeMarketplace</code> belum terdaftar.</td>
+              <td>Daftarkan provider, lalu ulangi.</td>
+            </tr>
+            <tr>
+              <td class="mono">NotFound / ResourceNotFound</td>
+              <td>Provider sudah benar, tetapi image itu tidak bisa diterbitkan SAS-nya.</td>
+              <td>Coba SKU lain. Ini bukan masalah izin.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <details>
+        <summary>Hasil pengujian tiga URN pada satu sistem yang sama</summary>
+        <p>Pengujian berikut dilakukan berurutan pada cluster yang identik, untuk memisahkan masalah konfigurasi dari masalah ketersediaan katalog.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>URN</th><th>Versi ter-resolve</th><th>Hasil</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">microsoftwindowsserver:windowsserver:2022-datacenter-azure-edition</td><td>terisi</td><td><span class="state ok">Berhasil unduh</span></td></tr>
+              <tr><td class="mono">microsoftwindowsserver:windowsserver:2025-datacenter-azure-edition-smalldisk</td><td>terisi</td><td><span class="state bad">SAS gagal</span></td></tr>
+              <tr><td class="mono">canonical:ubuntu-24_04-lts:server</td><td>terisi</td><td><span class="state bad">SAS gagal</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Versi ter-resolve untuk ketiganya, artinya katalog bisa membaca metadata image.
+          Yang gagal hanya penerbitan SAS untuk sebagian image. Karena itu, kegagalan semacam ini
+          adalah soal ketersediaan image, bukan salah konfigurasi.
+        </p>
+      </details>
+    </section>
+
+    <!-- 7 -->
+    <section id="image-linux">
+      <h2>7. VM image Linux</h2>
+      <p class="sub">Linux tidak bisa ditarik lewat URN. Prosedurnya berbeda sepenuhnya.</p>
+
+      <div class="note">
+        <strong>Ini bukan bug</strong>
+        Daftar image Marketplace yang didukung Azure Local hanya berisi Windows.
+        Untuk Ubuntu dan RHEL, Microsoft mendokumentasikan jalur ekspor VHD.
+      </div>
+
+      <h3>Alurnya</h3>
+      <ol>
+        <li>Buat VM Linux biasa di Azure sebagai sumber.</li>
+        <li>Bersihkan identitas VM dan ubah datasource cloud-init.</li>
+        <li>Hentikan VM, ekspor OS disk menjadi SAS URL.</li>
+        <li>Buat image Azure Local dari SAS URL itu.</li>
+        <li>Hapus VM sumber.</li>
+      </ol>
+
+      <h3>Langkah 2 — persiapan di dalam VM</h3>
+      <p>
+        Bagian paling krusial adalah mengubah datasource dari <code>Azure</code> ke <code>NoCloud</code>.
+        Tanpa itu, VM tidak akan menerima kredensial saat dibuat di Azure Local.
+      </p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">Bash</span><button class="copy-btn" type="button">Salin</button></div>
+<pre>set -eu
+
+cloud-init clean
+rm -rf /var/lib/cloud/ || true
+rm -rf /tmp/* || true
+rm -rf /var/log/* || true
+
+rm -f /etc/ssh/ssh_host*
+
+echo 'datasource_list: [ NoCloud ]' &gt; /etc/cloud/cloud.cfg.d/90_dpkg.cfg
+cat /etc/cloud/cloud.cfg.d/90_dpkg.cfg</pre>
+      </div>
+
+      <p>Script itu bisa dijalankan tanpa SSH sama sekali, lewat Run Command:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+<pre>az vm run-command invoke `
+  -g &lt;PREP_RG&gt; -n &lt;PREP_VM&gt; `
+  --command-id RunShellScript `
+  --scripts "@prep-ubuntu.sh" `
+  --query "value[0].message" -o tsv</pre>
+      </div>
+
+      <div class="note warn">
+        <strong>Dua jebakan di sini</strong>
+        Script yang dibuat di Windows berakhiran CRLF dan akan gagal di Linux dengan error <code>$'\r'</code>;
+        konversi ke LF dulu. Selain itu, script multi-baris yang ditempel langsung ke <code>--scripts</code>
+        akan diratakan jadi satu baris dan diam-diam tidak berfungsi — selalu pakai <code>"@file"</code>.
+      </div>
+
+      <h3>Langkah 3 dan 4 — ekspor disk lalu buat image</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+<pre>az vm deallocate -g &lt;PREP_RG&gt; -n &lt;PREP_VM&gt;
+
+$diskId = az vm show -g &lt;PREP_RG&gt; -n &lt;PREP_VM&gt; `
+  --query storageProfile.osDisk.managedDisk.id -o tsv
+
+$sas = (az disk grant-access --ids $diskId `
+  --duration-in-seconds 86400 --access-level Read `
+  --query accessSAS -o tsv | Out-String).Trim()
+
+az stack-hci-vm image create `
+  --subscription $sub --resource-group $rg `
+  --custom-location $cl --location &lt;REGION&gt; `
+  --name ubuntu2404 --os-type Linux `
+  --image-path ('"' + $sas + '"') `
+  --storage-path-id $sp</pre>
+      </div>
+
+      <div class="note warn">
+        <strong>Nama propertinya <code>accessSAS</code>, bukan <code>accessSas</code></strong>
+        Kalau salah kapitalisasi, perintah tidak error — ia hanya mengembalikan string kosong,
+        lalu <code>image create</code> mengeluh spesifikasi image tidak lengkap. Gejalanya jauh dari penyebabnya.
+      </div>
+
+      <div class="note">
+        <strong>Bersihkan setelah selesai</strong>
+        Cabut akses disk dengan <code>az disk revoke-access</code> dan hapus resource group sementara
+        setelah image berstatus tersedia.
+      </div>
+    </section>
+
+    <!-- 8 -->
+    <section id="buat-vm">
+      <h2>8. Membuat VM</h2>
+      <p class="sub">Setelah image, logical network, dan storage path lengkap.</p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+<pre>az stack-hci-vm network nic create `
+  --subscription $sub --resource-group $rg `
+  --custom-location $cl --location &lt;REGION&gt; `
+  --name &lt;NIC_NAME&gt; `
+  --subnet-id &lt;LNET_NAME&gt;
+
+az stack-hci-vm create `
+  --subscription $sub --resource-group $rg `
+  --custom-location $cl --location &lt;REGION&gt; `
+  --name &lt;VM_NAME&gt; `
+  --image &lt;IMAGE_NAME&gt; `
+  --admin-username &lt;USERNAME&gt; `
+  --admin-password $env:VM_ADMIN_PASSWORD `
+  --nics &lt;NIC_NAME&gt; `
+  --hardware-profile memory-mb=8192 processors=4 `
+  --storage-path-id $sp</pre>
+      </div>
+
+      <div class="note warn">
+        <strong>Jangan menaruh password di file atau riwayat perintah</strong>
+        Ambil dari variabel lingkungan yang diisi lewat <code>Read-Host -AsSecureString</code>,
+        dan hapus variabelnya setelah selesai. Password VM harus 12–123 karakter serta memenuhi
+        minimal tiga dari empat kategori: huruf besar, huruf kecil, angka, dan karakter khusus.
+      </div>
+    </section>
+
+    <!-- 9 -->
+    <section id="arc-agent">
+      <h2>9. Update Arc agent</h2>
+      <p class="sub">Di Azure Local, aturannya berbeda dengan Arc-enabled server biasa.</p>
+
+      <div class="note warn">
+        <strong>Jangan update agent secara manual di node Azure Local</strong>
+        Dokumentasi Azure Local menyatakan Azure Connected Machine agent dan Arc Resource Bridge
+        diperbarui otomatis ke versi tervalidasi ketika sistem di-update, dan update di luar jalur resmi
+        tidak didukung karena berisiko bentrok dengan Application Control (WDAC).
+      </div>
+
+      <p>
+        Jadi banner Advisor "A newer Arc agent version is available" pada node Azure Local
+        <strong>tidak</strong> diselesaikan dengan menjalankan installer MSI. Jalurnya adalah solution update.
+      </p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Salin</button></div>
+<pre>$base = "https://management.azure.com/subscriptions/$sub/resourceGroups/$rg" +
+        "/providers/Microsoft.AzureStackHCI/clusters/&lt;CLUSTER&gt;"
+
+az rest --method get --url "$base/updateSummaries/default?api-version=2024-04-01" `
+  --query "properties.{Version:currentVersion,State:state,Health:healthState}" -o json
+
+az rest --method get --url "$base/updates?api-version=2024-04-01" `
+  --query "value[].{Name:name,Version:properties.version,State:properties.state}" -o table</pre>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Konteks</th><th>Cara update agent</th></tr></thead>
+          <tbody>
+            <tr><td>Server Arc biasa</td><td>MSI, Microsoft Update, atau <code>azcmagent upgrade</code> (butuh agent 1.62+)</td></tr>
+            <tr><td>Node Azure Local</td><td>Hanya melalui solution update dari halaman Azure Local atau Azure Update Manager</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note">
+        <strong>Catatan tentang <code>azcmagent upgrade</code></strong>
+        Perintah ini hanya tersedia mulai agent versi 1.62. Pada versi lebih lama, perintahnya tidak ada —
+        sehingga pada node Azure Local yang tertinggal, satu-satunya jalur benar tetap solution update.
+      </div>
+    </section>
+
+    <!-- 10 -->
+    <section id="gotcha">
+      <h2>10. Jebakan CLI di Windows</h2>
+      <p class="sub">Kesalahan berikut memakan waktu paling banyak justru karena tidak terlihat seperti error.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Gejala</th><th>Penyebab</th><th>Solusi</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="mono">xyz was unexpected at this time</td>
+              <td>JMESPath memakai tanda kurung, misalnya <code>contains(type,'Image')</code>. PowerShell hanya mengutip argumen yang mengandung spasi, sehingga cmd memecah tanda kurung.</td>
+              <td>Filter di sisi PowerShell dengan <code>Where-Object</code>, atau hindari tanda kurung di <code>--query</code>.</td>
+            </tr>
+            <tr>
+              <td class="mono">An empty pipe element is not allowed</td>
+              <td><code>foreach</code> dipipe langsung ke <code>Format-Table</code>.</td>
+              <td>Tampung dulu: <code>$rows = foreach (...) { ... }</code> lalu pipe <code>$rows</code>.</td>
+            </tr>
+            <tr>
+              <td class="mono">$'\r': command not found</td>
+              <td>Script shell dibuat di Windows sehingga berakhiran CRLF.</td>
+              <td>Konversi ke LF sebelum dikirim ke mesin Linux.</td>
+            </tr>
+            <tr>
+              <td>Perintah sukses tetapi tidak melakukan apa pun</td>
+              <td>Script multi-baris ditempel langsung ke <code>--scripts</code> lalu diratakan jadi satu baris.</td>
+              <td>Selalu gunakan <code>--scripts "@file"</code>.</td>
+            </tr>
+            <tr>
+              <td class="mono">Unsupported Media Type</td>
+              <td><code>az rest --method put</code> tanpa header tipe konten.</td>
+              <td>Tambahkan <code>--headers Content-Type=application/json</code>.</td>
+            </tr>
+            <tr>
+              <td>Body JSON ditolak walau valid</td>
+              <td>JSON inline kehilangan tanda kutip saat melewati pembungkus batch.</td>
+              <td>Simpan ke file lalu kirim dengan <code>--body "@file.json"</code>.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 11 -->
+    <section id="referensi">
+      <h2>11. Referensi</h2>
+      <p class="sub">Seluruh prosedur di halaman ini mengikuti dokumentasi resmi berikut.</p>
+      <ul>
+        <li><a href="https://learn.microsoft.com/azure/azure-local/manage/azure-arc-vm-management-prerequisites">Review prerequisites for Azure Local VMs enabled by Azure Arc</a></li>
+        <li><a href="https://learn.microsoft.com/azure/azure-local/manage/virtual-machine-image-azure-marketplace">Create Azure Local VM image using Azure Marketplace images</a></li>
+        <li><a href="https://learn.microsoft.com/azure/azure-local/manage/virtual-machine-azure-marketplace-ubuntu">Prepare Ubuntu Azure Marketplace image for Azure Local VMs</a></li>
+        <li><a href="https://learn.microsoft.com/azure/azure-local/manage/create-logical-networks">Create logical networks for Azure Local VMs</a></li>
+        <li><a href="https://learn.microsoft.com/azure/azure-local/manage/create-arc-virtual-machines">Create Azure Local virtual machines enabled by Azure Arc</a></li>
+        <li><a href="https://learn.microsoft.com/azure/azure-local/update/about-updates-23h2">About updates for Azure Local</a></li>
+        <li><a href="https://learn.microsoft.com/azure/azure-arc/servers/manage-agent">Manage Azure Connected Machine agent versions</a></li>
+        <li><a href="https://learn.microsoft.com/azure/azure-arc/resource-bridge/overview">What is Azure Arc resource bridge?</a></li>
+      </ul>
+    </section>
+  </main>
+</div>
+
+<footer>
+  <div class="footer-inner">
+    <p>
+      Runbook ini disusun dari satu siklus deployment nyata. Seluruh identitas subscription, tenant, dan kredensial
+      sudah diganti placeholder. Perintah ditulis untuk PowerShell di Windows.
+    </p>
+  </div>
+</footer>
+
+<script>
+(() => {
+  // Copy buttons
+  document.querySelectorAll('.copy-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const pre = btn.closest('.code').querySelector('pre');
+      try {
+        await navigator.clipboard.writeText(pre.innerText);
+        const prev = btn.textContent;
+        btn.textContent = 'Tersalin';
+        setTimeout(() => { btn.textContent = prev; }, 1600);
+      } catch {
+        btn.textContent = 'Gagal menyalin';
+      }
+    });
+  });
+
+  // Scrollspy
+  const links = Array.from(document.querySelectorAll('nav.toc a'));
+  const map = new Map();
+  links.forEach((a) => {
+    const el = document.querySelector(a.getAttribute('href'));
+    if (el) map.set(el, a);
+  });
+
+  const obs = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        links.forEach((l) => l.classList.remove('active'));
+        const a = map.get(entry.target);
+        if (a) a.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-10% 0px -75% 0px' });
+
+  map.forEach((_, el) => obs.observe(el));
+
+  // Mobile nav
+  const toggle = document.getElementById('navToggle');
+  const toc = document.getElementById('toc');
+  toggle.addEventListener('click', () => {
+    const open = toc.classList.toggle('open');
+    toggle.setAttribute('aria-expanded', String(open));
+  });
+  toc.addEventListener('click', (e) => {
+    if (e.target.tagName === 'A' && window.innerWidth <= 900) {
+      toc.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+    }
+  });
+})();
+</script>
+</body>
+</html>
