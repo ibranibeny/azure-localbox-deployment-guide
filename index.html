@@ -526,6 +526,33 @@ az role assignment create `
         during this window.
       </div>
 
+      <h3>Needs attention is the expected state while validating</h3>
+
+      <p>
+        In resource lists the instance shows a red <strong>Needs attention</strong> long before anything is wrong. It
+        is driven by connectivity, and a system that has not finished building has never connected. Comparing a
+        validating instance against a healthy one shows which field actually carries the signal:
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Still validating</th><th>Healthy</th><th>Useful?</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">connectivityStatus</td><td class="mono">NotYetRegistered</td><td class="mono">Connected</td><td>Yes, this drives the portal label</td></tr>
+            <tr><td class="mono">status</td><td class="mono">ValidationInProgress</td><td class="mono">ConnectedRecently</td><td>Yes</td></tr>
+            <tr><td class="mono">reportedProperties.nodes</td><td class="mono">null</td><td class="mono">2 nodes</td><td>Yes</td></tr>
+            <tr><td class="mono">provisioningState</td><td class="mono">Succeeded</td><td class="mono">Succeeded</td><td><strong>No, identical in both</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note">
+        <strong>Treat it as an error only after validation ends</strong>
+        <code>Needs attention</code> during deployment carries no information. It becomes meaningful once
+        <code>status</code> settles: <code>ValidationFailed</code> is a real failure, while
+        <code>ValidationInProgress</code> simply means the work is still running.
+      </div>
+
       <h3>When both ARM and the extension report success but nothing was built</h3>
 
       <p>
@@ -1285,6 +1312,11 @@ az rest --method get --url "$base/updates?api-version=2024-04-01" `
               <td class="mono">An empty pipe element is not allowed</td>
               <td>A <code>foreach</code> loop piped directly into <code>Format-Table</code>.</td>
               <td>Capture first: <code>$rows = foreach (...) { ... }</code> then pipe <code>$rows</code>.</td>
+            </tr>
+            <tr>
+              <td>A progress counter reports 1 when the value is empty</td>
+              <td><code>@($null).Count</code> returns <strong>1</strong>. Wrapping a null property in <code>@()</code> manufactures a one-element array.</td>
+              <td><code>if ($null -eq $x) { 0 } else { @($x).Count }</code>. Dangerous in monitoring loops, where it invents progress that never happened.</td>
             </tr>
             <tr>
               <td class="mono">$'\r': command not found</td>
