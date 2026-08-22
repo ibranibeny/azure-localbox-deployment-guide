@@ -231,6 +231,47 @@ function Register-RequiredProviders {
     }
 }
 
+function Grant-ImageDownloadRole {
+    Write-Stage 'Granting image download permission on the resource group'
+
+    if ($SkipPrereqs) {
+        Write-Skip 'SkipPrereqs was specified'
+        return
+    }
+
+    # Deployment creates this assignment only on the resource group the instance was deployed
+    # into, so downloading an image anywhere else fails with Forbidden until it is granted here.
+    $role = 'Azure Connected Machine Resource Manager'
+    $scope = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroup"
+
+    $spId = Invoke-AzValue @('ad', 'sp', 'list', '--display-name', 'Microsoft.AzureStackHCI', '--query', '[0].id', '-o', 'tsv')
+    if (-not $spId) {
+        Write-Warn 'Could not resolve the Microsoft.AzureStackHCI resource provider application'
+        Write-Warn 'Marketplace image downloads into this resource group will fail with Forbidden'
+        return
+    }
+
+    $existing = Invoke-AzValue @('role', 'assignment', 'list', '--assignee', $spId, '--scope', $scope, '--query', '[].roleDefinitionName', '-o', 'tsv')
+    if ($existing -and ($existing -split "`n") -contains $role) {
+        Write-Skip "$role already assigned"
+        return
+    }
+
+    Write-Step "Assigning $role to the resource provider application"
+    & az role assignment create `
+        --assignee-object-id $spId `
+        --assignee-principal-type ServicePrincipal `
+        --role $role `
+        --scope $scope -o none
+
+    if ($LASTEXITCODE -eq 0) {
+        Write-Ok 'Role assigned. Allow a moment for it to propagate before downloading images'
+    }
+    else {
+        Write-Warn 'Role assignment failed. You may lack Owner or User Access Administrator on this scope'
+    }
+}
+
 # --------------------------------------------------------------------------------------
 # Stage 3 - Control plane readiness
 # --------------------------------------------------------------------------------------
@@ -645,6 +686,7 @@ Write-Host "Cluster $ClusterName in $ResourceGroup ($Location)" -ForegroundColor
 try {
     Initialize-Tooling
     Register-RequiredProviders
+    Grant-ImageDownloadRole
 
     $customLocationId = Test-ControlPlane
     $storagePathId    = Get-StoragePathId
