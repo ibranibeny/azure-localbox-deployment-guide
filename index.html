@@ -764,6 +764,43 @@ $d = az resource show --ids $id --api-version 2025-04-01-preview -o json | Conve
   --api-version 2025-04-01-preview</pre>
       </div>
 
+      <h3>Downloads that fail part-way</h3>
+
+      <p>
+        A download can also fail after it has been running successfully for some time. That failure looks nothing like
+        the ones above, and it is not a configuration problem:
+      </p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">Error</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>"errorCode": "Unknown",
+"errorMessage": "rpc error: code = Canceled desc = grpc: the client connection is closing",
+"progressPercentage": 70</pre>
+      </div>
+
+      <p>
+        The percentage is the useful signal. Any non-zero progress proves registration, RBAC, and SAS issuance all
+        succeeded, so nothing in your configuration is wrong. The gRPC channel between the cluster and the download
+        agent simply dropped. Retry with the delete-then-create sequence above.
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Progress when it failed</th><th>Interpretation</th><th>Action</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">0%</td><td>Never started. Registration, RBAC, or SKU availability.</td><td>Fix the cause, then recreate.</td></tr>
+            <tr><td class="mono">Any value above 0%</td><td>Transport or agent interruption.</td><td>Delete and recreate. Change nothing else.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note">
+        <strong>Expect this after restarting a lab</strong>
+        Interruptions are more likely while the cluster is still settling, for example shortly after the sequence in
+        section 13. A download that fails once at a high percentage and then completes on retry is normal behaviour,
+        not a symptom worth investigating further.
+      </div>
+
       <details>
         <summary>Controlled test of three URNs on one system</summary>
         <p>Run back to back against the same cluster, to separate configuration problems from catalog availability.</p>
@@ -1395,6 +1432,11 @@ Invoke-WebRequest -Uri $url -OutFile .\Install-AzureLocalStack.ps1</pre>
               <td class="mono">Property 'properties.status.provisioningStatus' is not supported</td>
               <td>Recreating over an image left in <code>Failed</code> state.</td>
               <td class="mono">az resource delete --ids &lt;image-id&gt;</td>
+            </tr>
+            <tr>
+              <td class="mono">rpc error: code = Canceled desc = grpc:<br>the client connection is closing</td>
+              <td>Download interrupted part-way. Transient, not configuration.</td>
+              <td>Delete and recreate the image unchanged.</td>
             </tr>
             <tr>
               <td>Empty string where a SAS URL was expected</td>
