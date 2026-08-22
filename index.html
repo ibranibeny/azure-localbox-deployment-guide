@@ -519,11 +519,11 @@ az role assignment create `
       </div>
 
       <div class="note warn">
-        <strong>deploymentSettings is empty during validation</strong>
-        The per-stage breakdown described below only populates once deployment itself begins. While validation runs,
-        <code>deploymentStatus.steps</code> is an empty array and <code>provisioningState</code> reads
-        <code>Provisioning</code>, which looks like nothing is happening. Use the cluster <code>status</code> field
-        during this window.
+        <strong>Validation and deployment are reported separately</strong>
+        <code>validationStatus</code> lists around twenty finely grained checks and completes first.
+        <code>deploymentStatus</code> then appears as a single long-running step, so the stage list stops being a
+        useful progress bar once deployment begins. Fall back to the cluster <code>status</code> field and the
+        <code>DeploymentProgress</code> tag for that phase.
       </div>
 
       <h3>Needs attention is the expected state while validating</h3>
@@ -627,7 +627,53 @@ $cluster = "&lt;CLUSTER_NAME&gt;"
 $id = "/subscriptions/$sub/resourceGroups/$rg/providers/" +
       "Microsoft.AzureStackHCI/clusters/$cluster/deploymentSettings/default"
 
-az resource show --ids $id --api-version 2024-04-01 -o json</pre>
+$d = az resource show --ids $id --api-version 2024-04-01 -o json | ConvertFrom-Json
+
+# The stage data lives under reportedProperties, not directly under properties
+$validation = $d.properties.reportedProperties.validationStatus
+$deployment = $d.properties.reportedProperties.deploymentStatus
+
+"validation: $($validation.status)  deployment: $($deployment.status)"
+
+$validation.steps |
+  Select-Object fullStepIndex, name, status |
+  Format-Table -AutoSize</pre>
+      </div>
+
+      <div class="note warn">
+        <strong>The stages are one level deeper than the obvious path</strong>
+        Reading <code>properties.deploymentStatus</code> returns <code>null</code>, because the field sits at
+        <code>properties.reportedProperties.deploymentStatus</code>. The shallow path does not error, it simply comes
+        back empty, which reads as "no stages yet" at any point in the deployment and hides the entire stage list.
+      </div>
+
+      <p>
+        Two separate lists are reported. Validation runs first and is finely grained; deployment follows and is
+        summarised as a single long-running step until it completes.
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>fullStepIndex</th><th>Validation stage</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">0</td><td>Remote Management</td><td><span class="state ok">Success</span></td></tr>
+            <tr><td class="mono">10</td><td>Connectivity</td><td><span class="state ok">Success</span></td></tr>
+            <tr><td class="mono">20</td><td>External Active Directory</td><td><span class="state ok">Success</span></td></tr>
+            <tr><td class="mono">50</td><td>Network Configuration</td><td><span class="state ok">Success</span></td></tr>
+            <tr><td class="mono">90</td><td>Arc Integration</td><td><span class="state ok">Success</span></td></tr>
+            <tr><td class="mono">120</td><td>Local Identity Validation</td><td><span class="state wait">Skipped</span></td></tr>
+            <tr><td class="mono">150</td><td>Add hosts to domain and create cluster object</td><td><span class="state ok">Success</span></td></tr>
+            <tr><td class="mono">170</td><td>Cluster Validation</td><td><span class="state ok">Success</span></td></tr>
+            <tr><td class="mono">190</td><td>Storage Validation</td><td><span class="state ok">Success</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note">
+        <strong>Skipped is not a failure</strong>
+        Stages that do not apply to your configuration report <code>Skipped</code>. Only <code>Error</code> warrants
+        action. Each entry also carries <code>startTimeUtc</code> and <code>endTimeUtc</code>, which is the most
+        reliable way to see where time is actually going.
       </div>
 
       <figure>
