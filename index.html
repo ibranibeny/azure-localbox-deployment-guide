@@ -235,7 +235,9 @@ footer { border-top: 1px solid var(--cp-border); background: var(--cp-bg-elevate
       <li><a href="#aks">AKS enabled by Azure Arc</a></li>
       <li><a href="#arc-agent">Updating the Arc agent</a></li>
       <li><a href="#pitfalls">Windows CLI pitfalls</a></li>
+      <li><a href="#restart">Restarting a stopped host</a></li>
       <li><a href="#automation">Automation script</a></li>
+      <li><a href="#fixes">Error to fix-command reference</a></li>
       <li><a href="#references">References</a></li>
     </ol>
   </nav>
@@ -378,6 +380,42 @@ $rows | Format-Table -AutoSize</pre>
         <li><strong>Azure Connected Machine Onboarding</strong> and <strong>Azure Connected Machine Resource Administrator</strong> on the resource group where machines are registered.</li>
         <li><strong>Azure Connected Machine Resource Manager</strong> granted to the <code>Microsoft.AzureStackHCI</code> resource provider application, on the resource group where images are downloaded.</li>
       </ul>
+
+      <div class="note warn">
+        <strong>The second assignment is per resource group, and it is the one people miss</strong>
+        It is not granted at subscription scope and it does not follow you around. Deployment creates it on the
+        resource group the instance was deployed into, so image downloads there work immediately and the requirement
+        stays invisible. The moment you download an image into <em>any other</em> resource group, it fails.
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>$spId = az ad sp list --display-name "Microsoft.AzureStackHCI" --query "[0].id" -o tsv
+
+az role assignment create `
+  --assignee-object-id $spId `
+  --assignee-principal-type ServicePrincipal `
+  --role "Azure Connected Machine Resource Manager" `
+  --scope "/subscriptions/$sub/resourceGroups/$rg"</pre>
+      </div>
+
+      <p>Verify it before attempting any image download:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>az role assignment list `
+  --assignee $spId `
+  --scope "/subscriptions/$sub/resourceGroups/$rg" `
+  --query "[].roleDefinitionName" -o tsv</pre>
+      </div>
+
+      <div class="note">
+        <strong>Why this role specifically</strong>
+        <code>Azure Connected Machine Resource Manager</code> is the only built-in role that carries
+        <code>Microsoft.EdgeMarketPlace/offers/generateAccessToken/action</code>, which is the permission the download
+        actually needs. Broad roles such as Owner or Contributor do not include it, so escalating privileges is not a
+        workaround.
+      </div>
     </section>
 
     <section id="deployment">
@@ -613,6 +651,15 @@ az stack-hci-vm network lnet create `
         </table>
       </div>
 
+      <figure>
+        <img src="assets/steps/step-04-logical-network.png" alt="Azure portal showing an Azure Local logical network with static IP assignment, IP pools 192.168.200.100 to 192.168.200.140, VLAN 200, and the converged virtual switch." loading="lazy" />
+        <figcaption>
+          A correctly built logical network. <strong>IP Pools</strong> is the field to check: leave it empty and Arc
+          VMs still work, but AKS will reject the network. The custom location shown here lives in a different
+          resource group from the network itself, which is supported.
+        </figcaption>
+      </figure>
+
       <div class="note warn">
         <strong>Quoting the switch name</strong>
         <code>ConvergedSwitch(compute_management)</code> contains parentheses. On Windows the <code>az</code> command
@@ -659,6 +706,14 @@ $d = az resource show --ids $id --api-version 2025-04-01-preview -o json | Conve
 } | Format-List</pre>
       </div>
 
+      <figure>
+        <img src="assets/steps/step-05-image-downloading.png" alt="Azure portal showing an Azure Local marketplace gallery image with status Downloading and a progress percentage." loading="lazy" />
+        <figcaption>
+          A download in flight. The portal reports the same percentage as the CLI. Until this reaches 100 percent the
+          image cannot be used to create a VM, even though the resource already exists.
+        </figcaption>
+      </figure>
+
       <h3>When GenerateTokenFromEdgeMarketplaceServiceFailed appears</h3>
 
       <p>This single error code has two very different causes. Read the inner message:</p>
@@ -673,12 +728,40 @@ $d = az resource show --ids $id --api-version 2025-04-01-preview -o json | Conve
               <td>Register the provider, then retry.</td>
             </tr>
             <tr>
+              <td class="mono">Forbidden / AuthorizationFailed</td>
+              <td>The <code>Microsoft.AzureStackHCI</code> resource provider application lacks <code>Azure Connected Machine Resource Manager</code> on <em>this</em> resource group.</td>
+              <td>Assign the role at that scope, delete the failed image, and create it again.</td>
+            </tr>
+            <tr>
               <td class="mono">NotFound / ResourceNotFound</td>
               <td>Registration is fine, but no download SAS can be issued for that image.</td>
               <td>Choose a different SKU. This is not a permissions problem.</td>
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div class="note warn">
+        <strong>Read the status code, not just the error code</strong>
+        All three failures share the identical outer code, so the outer code alone tells you nothing. The status word
+        is what separates them: <code>Forbidden</code> is RBAC, <code>NotFound</code> is availability, and a
+        registration failure names itself. Treating every occurrence as a catalog problem sends you looking for a
+        different SKU when the real fix is one role assignment.
+      </div>
+
+      <div class="note">
+        <strong>A failed image resource blocks the retry</strong>
+        The resource stays behind in <code>Failed</code> state, and creating it again is treated as an update rather
+        than a create. That surfaces as an unrelated-looking admission webhook complaint about
+        <code>properties.status.provisioningStatus</code> not being supported by the cluster extension version. Delete
+        the resource first, then create it cleanly.
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>az resource delete `
+  --ids "/subscriptions/$sub/resourceGroups/$rg/providers/Microsoft.AzureStackHCI/marketplaceGalleryImages/&lt;IMAGE&gt;" `
+  --api-version 2025-04-01-preview</pre>
       </div>
 
       <details>
@@ -833,6 +916,15 @@ az stack-hci-vm create `
         The VM is ready when <code>provisioningState</code> is <code>Succeeded</code> and the network interface has
         received an address from the pool, typically the first address of the range you defined.
       </div>
+
+      <figure>
+        <img src="assets/steps/step-06-nic.png" alt="Azure portal showing an Azure Local VM network interface with status Succeeded and IP address 192.168.200.100." loading="lazy" />
+        <figcaption>
+          The interface took <code>192.168.200.100</code>, the first address of a pool defined as .100 to .140. Create
+          the interface before the VM: if the pool is exhausted or missing, the failure appears here rather than
+          part-way through VM provisioning.
+        </figcaption>
+      </figure>
     </section>
 
     <section id="aks">
@@ -997,13 +1089,167 @@ az rest --method get --url "$base/updates?api-version=2024-04-01" `
       </div>
     </section>
 
-    <section id="automation">
-      <h2>13. Automation script</h2>
-      <p class="sub">Everything in this runbook, as one idempotent PowerShell script.</p>
+    <section id="restart">
+      <h2>13. Restarting a stopped host</h2>
+      <p class="sub">Everything reports Offline, yet nothing is broken. This is the most alarming-looking failure in a lab.</p>
 
       <p>
-        <code>Install-AzureLocalStack.ps1</code> in this repository performs the whole sequence and is safe to
-        re-run: each stage checks for existing resources and skips completed work.
+        In a nested lab the whole cluster lives inside one Azure virtual machine. When that machine is deallocated —
+        overnight, by a cost policy, or by hand — every layer below it goes dark at once, and the resource blades
+        fill with red. No resource has actually been damaged.
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Resource</th><th>Field</th><th>Reads</th></tr></thead>
+          <tbody>
+            <tr><td>Cluster</td><td class="mono">connectivityStatus</td><td><span class="state bad">Disconnected</span></td></tr>
+            <tr><td>Both nodes</td><td class="mono">status</td><td><span class="state bad">Disconnected</span></td></tr>
+            <tr><td>Resource bridge</td><td class="mono">status</td><td><span class="state bad">Offline</span></td></tr>
+            <tr><td>Resource bridge</td><td class="mono">provisioningState</td><td><span class="state ok">Succeeded</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note warn">
+        <strong>The same trap as section 5, seen from the other side</strong>
+        <code>provisioningState</code> still reads <code>Succeeded</code> because the ARM record is intact and nothing
+        was deleted. Only the runtime <code>status</code> field tracks whether the appliance is actually alive. Judge
+        availability by <code>status</code>, never by <code>provisioningState</code>.
+      </div>
+
+      <h3>Step 1 — confirm the host is the cause</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>az vm get-instance-view `
+  --subscription $sub -g $rg -n &lt;HOST_VM&gt; `
+  --query "instanceView.statuses[?starts_with(code,'PowerState')].displayStatus | [0]" -o tsv</pre>
+      </div>
+
+      <p>
+        A result of <code>VM deallocated</code> explains every downstream symptom at once, and means no further
+        diagnosis of the bridge or the nodes is needed.
+      </p>
+
+      <h3>Step 2 — start the host</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>az vm start --subscription $sub -g $rg -n &lt;HOST_VM&gt;</pre>
+      </div>
+
+      <h3>Step 3 — start the nested nodes, which do not start themselves</h3>
+
+      <div class="note warn">
+        <strong>Starting the outer machine is not enough</strong>
+        The nested node VMs are configured with an automatic start action of <em>Nothing</em>, so they stay powered
+        off after the host boots. Waiting for the cluster to return on its own will never succeed. Only the
+        management VM comes back by itself, which makes the situation look like a partial recovery.
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>$f = "$env:TEMP\start-nested.ps1"
+@'
+Start-VM -Name &lt;NODE1&gt;,&lt;NODE2&gt; -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 8
+Get-VM | ForEach-Object { "{0} state={1}" -f $_.Name, $_.State }
+'@ | Set-Content -Path $f -Encoding ascii
+
+az vm run-command invoke `
+  --subscription $sub -g $rg -n &lt;HOST_VM&gt; `
+  --command-id RunPowerShellScript `
+  --scripts "@$f" `
+  --query "value[0].message" -o tsv
+
+Remove-Item $f -Force</pre>
+      </div>
+
+      <div class="note">
+        <strong>Reading raw Hyper-V state codes</strong>
+        If you serialise with <code>ConvertTo-Json</code> instead of formatting strings, <code>State</code> arrives as
+        an integer: <code>2</code> is Running and <code>3</code> is Off. Formatting the value as text, as above, avoids
+        having to remember the enumeration.
+      </div>
+
+      <h3>Step 4 — wait for the layers to come back in order</h3>
+
+      <p>Recovery is sequential, and each layer only starts once the one below it is healthy.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Order</th><th>Layer</th><th>Wait for</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>Host VM</td><td><code>VM running</code></td></tr>
+            <tr><td>2</td><td>Nested nodes</td><td>Guest OS boot, then <code>status</code> <span class="state ok">Connected</span></td></tr>
+            <tr><td>3</td><td>Cluster</td><td><code>connectivityStatus</code> <span class="state ok">Connected</span></td></tr>
+            <tr><td>4</td><td>Resource bridge</td><td><code>status</code> <span class="state ok">Running</span></td></tr>
+            <tr><td>5</td><td>Workload resources</td><td>Only now will image, VM, and AKS commands succeed</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>$rows = @()
+foreach ($n in '&lt;NODE1&gt;','&lt;NODE2&gt;') {
+  $s = az resource show --subscription $sub -g $rg -n $n `
+         --resource-type Microsoft.HybridCompute/machines `
+         --api-version 2024-07-10 --query "properties.status" -o tsv
+  $rows += [pscustomobject]@{ Node = $n; Status = $s }
+}
+$rows | Format-Table -AutoSize
+
+az resource show `
+  --ids "/subscriptions/$sub/resourceGroups/$rg/providers/Microsoft.ResourceConnector/appliances/&lt;CLUSTER&gt;-arcbridge" `
+  --api-version 2022-10-27 --query "properties.status" -o tsv</pre>
+      </div>
+
+      <div class="note">
+        <strong>Cost note</strong>
+        The host machine is the expensive component in a nested lab, and it bills whenever it is running. Deallocating
+        it between sessions is the correct habit — just remember that bringing it back is a two-step operation, not one.
+      </div>
+    </section>
+
+    <section id="automation">
+      <h2>14. Automation script</h2>
+      <p class="sub">Everything in this runbook, as one idempotent PowerShell script.</p>
+
+      <h3>Getting the script</h3>
+
+      <p>Clone the whole repository:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>git clone https://github.com/ibranibeny/azure-localbox-deployment-guide.git
+cd azure-localbox-deployment-guide</pre>
+      </div>
+
+      <p>Or download just the script, without git:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>$url = "https://raw.githubusercontent.com/ibranibeny/" +
+       "azure-localbox-deployment-guide/main/Install-AzureLocalStack.ps1"
+
+Invoke-WebRequest -Uri $url -OutFile .\Install-AzureLocalStack.ps1
+Unblock-File .\Install-AzureLocalStack.ps1</pre>
+      </div>
+
+      <div class="note warn">
+        <strong>Read before you run</strong>
+        <code>Unblock-File</code> removes the mark-of-the-web that PowerShell uses to block downloaded scripts. Only
+        do this after reading the source. If your execution policy still blocks it, prefer
+        <code>-ExecutionPolicy Bypass</code> on a single invocation over changing the machine-wide policy.
+      </div>
+
+      <h3>Running it</h3>
+
+      <p>
+        <code>Install-AzureLocalStack.ps1</code> performs the whole sequence and is safe to re-run: each stage checks
+        for existing resources and skips completed work.
       </p>
 
       <div class="code">
@@ -1040,10 +1286,208 @@ az rest --method get --url "$base/updates?api-version=2024-04-01" `
         The script never writes a credential to disk. Linux VMs authenticate with your existing SSH public key, and
         any generated password exists only for the lifetime of the command.
       </div>
+
+      <figure>
+        <img src="assets/steps/step-02-resource-group.png" alt="Azure portal resource group view listing an Azure Local logical network, a marketplace gallery image, and a VM network interface." loading="lazy" />
+        <figcaption>
+          The resource set the runbook produces, in a resource group that holds no Azure Local instance of its own.
+          Workload resources reference the custom location by ID, so they are free to live anywhere in the
+          subscription.
+        </figcaption>
+      </figure>
+
+      <h3>The whole thing as one command</h3>
+
+      <p>Download and run in a single statement. Substitute the five placeholders and nothing else:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>$s = "$env:TEMP\Install-AzureLocalStack.ps1"; Invoke-WebRequest -Uri "https://raw.githubusercontent.com/ibranibeny/azure-localbox-deployment-guide/main/Install-AzureLocalStack.ps1" -OutFile $s; Unblock-File $s; &amp; $s -SubscriptionId &lt;SUBSCRIPTION_ID&gt; -ResourceGroup &lt;RESOURCE_GROUP&gt; -ClusterName &lt;CLUSTER_NAME&gt; -Location australiaeast -CustomLocationName &lt;CUSTOM_LOCATION&gt; -IncludeLinuxImage -CreateVm -CreateAks</pre>
+      </div>
+
+      <div class="note warn">
+        <strong>Understand what a one-liner costs you</strong>
+        This downloads code and executes it in the same breath, so you are trusting whatever the URL serves at that
+        moment. It is written to a file rather than piped into <code>Invoke-Expression</code> specifically so the
+        script can be inspected afterwards, but that is a weak safeguard. For anything beyond a lab, pin to a commit
+        or a release tag and read the file before running it.
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell — pinned to a commit</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>$sha = "&lt;COMMIT_SHA&gt;"
+$url = "https://raw.githubusercontent.com/ibranibeny/" +
+       "azure-localbox-deployment-guide/$sha/Install-AzureLocalStack.ps1"
+
+Invoke-WebRequest -Uri $url -OutFile .\Install-AzureLocalStack.ps1</pre>
+      </div>
+
+      <div class="note warn">
+        <strong>What this command cannot do</strong>
+        It configures workload resources on an Azure Local instance that already exists. It does not build the
+        instance itself. Creating Azure Local requires physical or nested machines running the Azure Local operating
+        system, registered with Azure Arc and deployed through the Azure Local deployment process. No CLI command
+        creates a cluster from nothing.
+      </div>
+    </section>
+
+    <section id="fixes">
+      <h2>15. Error to fix-command reference</h2>
+      <p class="sub">Every failure encountered during one full deployment cycle, with the command that resolved it.</p>
+
+      <p>
+        Errors are grouped by the layer that produced them. Each fix is the command that actually cleared the error,
+        not a general recommendation.
+      </p>
+
+      <h3>Control plane and availability</h3>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Error or symptom</th><th>Cause</th><th>Fix</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><em>No Azure Local VMs to display</em>, with an empty Create button</td>
+              <td>Deployment still running, or the bridge is not <code>Running</code>, or no custom location exists.</td>
+              <td class="mono">az stack-hci-vm image list ...<br>then check bridge <code>status</code></td>
+            </tr>
+            <tr>
+              <td class="mono">bridge status: WaitingForHeartbeat</td>
+              <td>Appliance created but has not called home yet.</td>
+              <td>Wait. Do not recreate. <code>provisioningState</code> is already <code>Succeeded</code>.</td>
+            </tr>
+            <tr>
+              <td class="mono">bridge status: Offline</td>
+              <td>Underlying host powered off.</td>
+              <td class="mono">az vm start ...<br>then <code>Start-VM</code> on the nested nodes</td>
+            </tr>
+            <tr>
+              <td class="mono">nodes: Disconnected</td>
+              <td>Nested node VMs did not auto-start with the host.</td>
+              <td class="mono">az vm run-command invoke --scripts "@file"</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Images</h3>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Error</th><th>Cause</th><th>Fix</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="mono">SubscriptionNotRegistered</td>
+              <td>Marketplace provider missing.</td>
+              <td class="mono">az provider register --namespace Microsoft.EdgeMarketplace</td>
+            </tr>
+            <tr>
+              <td class="mono">GenerateTokenFromEdgeMarketplaceServiceFailed<br>with Forbidden</td>
+              <td>RP app has no role on the target resource group.</td>
+              <td class="mono">az role assignment create --role "Azure Connected Machine Resource Manager" --scope &lt;rg&gt;</td>
+            </tr>
+            <tr>
+              <td class="mono">GenerateTokenFromEdgeMarketplaceServiceFailed<br>with NotFound</td>
+              <td>No download token can be issued for that SKU.</td>
+              <td>Switch to <code>2022-datacenter-azure-edition</code>, or build the image from a VHD.</td>
+            </tr>
+            <tr>
+              <td class="mono">Property 'properties.status.provisioningStatus' is not supported</td>
+              <td>Recreating over an image left in <code>Failed</code> state.</td>
+              <td class="mono">az resource delete --ids &lt;image-id&gt;</td>
+            </tr>
+            <tr>
+              <td>Empty string where a SAS URL was expected</td>
+              <td>Queried <code>accessSas</code>; the property is <code>accessSAS</code>.</td>
+              <td class="mono">--query accessSAS -o tsv</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Networking and AKS</h3>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Error</th><th>Cause</th><th>Fix</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="mono">LogicalNetworkValidation ... does not have an ippool</td>
+              <td>Logical network created without an IP pool.</td>
+              <td>Delete the AKS cluster and the network, then recreate with <code>--ip-pool-start</code> and <code>--ip-pool-end</code>.</td>
+            </tr>
+            <tr>
+              <td>Pool cannot be added to an existing network</td>
+              <td><code>lnet update</code> does not expose pool parameters.</td>
+              <td>Recreation is the only path. Detach dependents first.</td>
+            </tr>
+            <tr>
+              <td class="mono">CloudAgentConnectivityError</td>
+              <td>Logical network DNS cannot resolve the cluster FQDN.</td>
+              <td>Point <code>--dns-servers</code> at a resolver that serves the management domain.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Virtual machines and templates</h3>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Error</th><th>Cause</th><th>Fix</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="mono">InvalidParameter: osProfile.adminPassword</td>
+              <td>Password fails complexity: needs three of upper, lower, digit, special.</td>
+              <td>Supply it from an environment variable rather than a parameter file.</td>
+            </tr>
+            <tr>
+              <td class="mono">expected one argument</td>
+              <td>A value beginning with <code>-</code> is parsed as an option name.</td>
+              <td>Use <code>--value=-abc</code>, or generate secrets as hex so they cannot start with a dash.</td>
+            </tr>
+            <tr>
+              <td>SSH VM creation rejected without a password</td>
+              <td><code>--authentication-type ssh</code> still requires a password and a destination key path.</td>
+              <td>Pass <code>--admin-password</code> and <code>--ssh-dest-key-path</code> as well.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Tooling and publishing</h3>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Error</th><th>Cause</th><th>Fix</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="mono">HCRP404</td>
+              <td>Reading a run command before the PUT that creates it finished.</td>
+              <td>Create it, then poll until <code>provisioningState</code> is <code>Succeeded</code>.</td>
+            </tr>
+            <tr>
+              <td class="mono">Unsupported Media Type</td>
+              <td>Missing content type on <code>az rest --method put</code>.</td>
+              <td class="mono">--headers Content-Type=application/json</td>
+            </tr>
+            <tr>
+              <td><code>git push</code> hangs with no prompt</td>
+              <td>No credential helper configured for the GitHub remote.</td>
+              <td class="mono">gh auth setup-git</td>
+            </tr>
+            <tr>
+              <td class="mono">Your current plan does not support GitHub Pages</td>
+              <td>Enterprise Managed User accounts cannot create public repositories or serve Pages.</td>
+              <td>Publish from a personal account, or ask an enterprise administrator.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </section>
 
     <section id="references">
-      <h2>14. References</h2>
+      <h2>16. References</h2>
       <p class="sub">Every procedure here follows the official documentation below.</p>
       <ul>
         <li><a href="https://learn.microsoft.com/azure/azure-arc/resource-bridge/overview">What is Azure Arc resource bridge?</a></li>
