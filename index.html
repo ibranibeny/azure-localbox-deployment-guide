@@ -1430,6 +1430,73 @@ az rest --method get --url "$base/updates?api-version=2024-04-01" `
 
       <h3>Step 1 — confirm the host is the cause</h3>
 
+      <p>Both scripts in this repository take the same two parameters. The first one only reads:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>.\Get-LabPowerState.ps1 `
+  -SubscriptionId &lt;SUBSCRIPTION_ID&gt; `
+  -ResourceGroup  &lt;RESOURCE_GROUP&gt;</pre>
+      </div>
+
+      <p>
+        It reports both layers, because checking only the Azure one is what makes this failure confusing. A host that
+        reads <code>VM running</code> while its guests are off produces exactly the symptoms of a broken cluster.
+      </p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">Output</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>Azure host
+  state                 VM running
+  size                  Standard_E32s_v6
+
+Nested guests
+  AzLHOST1              Off
+  AzLHOST2              Off
+  AzLMGMT               Running   28 GB
+
+Host is running but 2 nested guest(s) are not.</pre>
+      </div>
+
+      <h3>Step 2 — bring both layers up</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>.\Start-Lab.ps1 `
+  -SubscriptionId &lt;SUBSCRIPTION_ID&gt; `
+  -ResourceGroup  &lt;RESOURCE_GROUP&gt;</pre>
+      </div>
+
+      <p>
+        It restores the cost governance tags, starts the host, then starts every guest that is off. Each stage is
+        skipped when it is already satisfied, so it is safe to run repeatedly.
+      </p>
+
+      <div class="note warn">
+        <strong>Why a lab deallocates itself, and why the tags come first</strong>
+        Deployment automation writes its progress into a tag by <em>replacing</em> the tag set rather than merging into
+        it. Any governance tags applied at deployment time are removed in the process, <code>CostControl</code> among
+        them. In a subscription with cost automation, a host without that tag is a candidate for deallocation, which is
+        how a lab can be shut down in the middle of its own deployment.
+      </div>
+
+      <p>
+        The evidence is easy to confirm: resources the deployment scripts never touch keep their tags, while the ones
+        they update do not.
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Resource</th><th>Written to by deployment scripts?</th><th>Tags present</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">LocalBox-VNet</td><td>No</td><td class="mono">CostControl, SecurityControl, Project</td></tr>
+            <tr><td class="mono">LocalBox-Client</td><td>Yes, progress tag</td><td class="mono">DeploymentProgress only</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Doing it by hand</h3>
+
       <div class="code">
         <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
 <pre>az vm get-instance-view `
@@ -1442,14 +1509,14 @@ az rest --method get --url "$base/updates?api-version=2024-04-01" `
         diagnosis of the bridge or the nodes is needed.
       </p>
 
-      <h3>Step 2 — start the host</h3>
+      <h3>Starting the host by hand</h3>
 
       <div class="code">
         <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
 <pre>az vm start --subscription $sub -g $rg -n &lt;HOST_VM&gt;</pre>
       </div>
 
-      <h3>Step 3 — start the nested nodes, which do not start themselves</h3>
+      <h3>Starting the nested nodes by hand, which do not start themselves</h3>
 
       <div class="note warn">
         <strong>Starting the outer machine is not enough</strong>
@@ -1483,7 +1550,7 @@ Remove-Item $f -Force</pre>
         having to remember the enumeration.
       </div>
 
-      <h3>Step 4 — wait for the layers to come back in order</h3>
+      <h3>What to wait for, in order</h3>
 
       <p>Recovery is sequential, and each layer only starts once the one below it is healthy.</p>
 
@@ -1528,6 +1595,19 @@ az resource show `
       <p class="sub">Everything in this runbook, as one idempotent PowerShell script.</p>
 
       <h3>Getting the script</h3>
+
+      <p>Three scripts ship in this repository:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Script</th><th>Purpose</th><th>Writes anything?</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">Install-AzureLocalStack.ps1</td><td>Builds the whole workload stack: network, images, VM, AKS</td><td>Yes</td></tr>
+            <tr><td class="mono">Start-Lab.ps1</td><td>Brings a stopped lab back up, both layers, and restores cost tags</td><td>Yes</td></tr>
+            <tr><td class="mono">Get-LabPowerState.ps1</td><td>Reports the power state of both layers</td><td>No, read only</td></tr>
+          </tbody>
+        </table>
+      </div>
 
       <p>Clone the whole repository:</p>
 
