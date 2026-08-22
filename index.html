@@ -427,6 +427,21 @@ az role assignment create `
         <code>deploymentSettings</code> child resource:
       </p>
 
+      <figure>
+        <img src="assets/steps/step-03-deployment-running.png" alt="Azure portal deployments blade showing network, storage, and policy deployments succeeded while the host VM deployment is still in progress." loading="lazy" />
+        <figcaption>
+          What ARM shows you. Networking, storage, and policy finish in seconds; the host VM deployment takes minutes.
+          None of this reflects the Azure Local instance itself, which has not started building yet.
+        </figcaption>
+      </figure>
+
+      <div class="note warn">
+        <strong>The ARM deployment finishes long before the instance is usable</strong>
+        Once the host is provisioned, a bootstrap script inside it does the real work: creating the nodes, forming the
+        cluster, registering it with Azure Arc, deploying the resource bridge, and creating the custom location. That
+        phase is invisible to ARM. A deployment marked <code>Succeeded</code> is not a signal that you can create VMs.
+      </div>
+
       <div class="code">
         <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
 <pre>$sub = "&lt;SUBSCRIPTION_ID&gt;"
