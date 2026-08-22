@@ -907,6 +907,32 @@ az stack-hci-vm image create `
         from its cause.
       </div>
 
+      <div class="note warn">
+        <strong>Why the SAS is wrapped in quotes, and what happens if it is not</strong>
+        A SAS URL contains several <code>&amp;</code> separators and no spaces. PowerShell only quotes an argument that
+        contains a space, so an unquoted SAS reaches the <code>az</code> batch wrapper bare and cmd treats every
+        <code>&amp;</code> as a command separator. The URL is truncated at the first one and the token is lost.
+      </div>
+
+      <p>The give-away is a burst of stray command errors naming the SAS fields, alongside an authentication failure:</p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">Error</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>RESPONSE 401: Server failed to authenticate the request.
+ERROR CODE: NoAuthenticationInformation
+
+'sr' is not recognized as an internal or external command
+'si' is not recognized as an internal or external command
+'sig' is not recognized as an internal or external command</pre>
+      </div>
+
+      <p>
+        Read the two halves together. Alone, the 401 points at permissions or an expired token and sends you off to
+        reissue the SAS or audit RBAC. Neither is the fault: the blob was requested with no token at all, because the
+        token was parsed away as shell syntax. Count the <code>&amp;</code> characters in your SAS and you will find
+        exactly one stray command error per separator.
+      </p>
+
       <div class="note">
         <strong>Clean up afterwards</strong>
         Once the image reports 100 percent, run <code>az disk revoke-access</code> and delete the temporary resource group.
@@ -1120,6 +1146,11 @@ az rest --method get --url "$base/updates?api-version=2024-04-01" `
               <td>Empty value from a successful command</td>
               <td>Wrong property capitalisation, for example <code>accessSas</code> instead of <code>accessSAS</code>.</td>
               <td>Inspect property names before querying them.</td>
+            </tr>
+            <tr>
+              <td>A URL argument is silently truncated</td>
+              <td>The value contains <code>&amp;</code> but no space, so PowerShell passes it unquoted and cmd splits on it.</td>
+              <td>Wrap it as <code>'"' + $value + '"'</code>. The space rule, not the character, decides quoting.</td>
             </tr>
           </tbody>
         </table>
@@ -1437,6 +1468,11 @@ Invoke-WebRequest -Uri $url -OutFile .\Install-AzureLocalStack.ps1</pre>
               <td class="mono">rpc error: code = Canceled desc = grpc:<br>the client connection is closing</td>
               <td>Download interrupted part-way. Transient, not configuration.</td>
               <td>Delete and recreate the image unchanged.</td>
+            </tr>
+            <tr>
+              <td class="mono">401 NoAuthenticationInformation<br>plus stray <code>'sig' is not recognized</code> errors</td>
+              <td>Unquoted SAS URL split on its <code>&amp;</code> separators by the batch wrapper.</td>
+              <td class="mono">--image-path ('"' + $sas + '"')</td>
             </tr>
             <tr>
               <td>Empty string where a SAS URL was expected</td>
