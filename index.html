@@ -442,6 +442,71 @@ az role assignment create `
         phase is invisible to ARM. A deployment marked <code>Succeeded</code> is not a signal that you can create VMs.
       </div>
 
+      <h3>When both ARM and the extension report success but nothing was built</h3>
+
+      <p>
+        Because the build happens inside the host, a failure there does not travel back to ARM. Both the deployment and
+        the bootstrap extension can read <code>Succeeded</code> while the cluster was never created. The evidence is in
+        the logs on the host, not in Azure.
+      </p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell &mdash; read the build log from outside the VM</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>$f = "$env:TEMP\tail-log.ps1"
+@'
+Get-ChildItem C:\LocalBox\Logs -File |
+  Sort-Object LastWriteTime -Descending |
+  Select-Object -First 6 |
+  ForEach-Object { "{0}  {1}" -f $_.LastWriteTime.ToString("HH:mm:ss"), $_.Name }
+
+Get-Content C:\LocalBox\Logs\New-LocalBoxCluster.log -Tail 25
+'@ | Set-Content -Path $f -Encoding ascii
+
+az vm run-command invoke `
+  -g $rg -n &lt;HOST_VM&gt; --command-id RunPowerShellScript `
+  --scripts "@$f" --query "value[0].message" -o tsv</pre>
+      </div>
+
+      <div class="note warn">
+        <strong>A tooling race can abort the build in its first step</strong>
+        The build downloads its VHDs with <code>azcopy</code>, which is installed separately by a package-manager
+        provisioning task. When the build starts first, every download fails with
+        <code>The term 'azcopy' is not recognized</code>, and the run aborts reporting a missing VHD, which points at
+        storage rather than at the real cause.
+      </div>
+
+      <p>Compare timestamps across the logs and the ordering is unmistakable:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Time</th><th>Event</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">13:57</td><td>Bootstrap finishes</td></tr>
+            <tr><td class="mono">13:58</td><td>Logon script starts</td></tr>
+            <tr><td class="mono">13:59</td><td>Build calls <code>azcopy</code> and fails</td></tr>
+            <tr><td class="mono">14:05</td><td>Package provisioning finishes, installing <code>azcopy</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        The abort message names the symptom, not the cause. Chasing it leads to storage and permissions, when the fix is
+        simply to run the build again once the tooling exists:
+      </p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>Get-Command azcopy    # confirm it resolves before retrying
+Start-ScheduledTask -TaskName LocalBoxLogonScript</pre>
+      </div>
+
+      <div class="note good">
+        <strong>Safe to retry</strong>
+        The failure happens in step 1 of 11, while downloading, so nothing has been built yet and nothing needs
+        cleaning up first. Success looks like the VHD folder filling up: roughly 18 GB for the management image and
+        13 GB for the node image.
+      </div>
+
       <div class="code">
         <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
 <pre>$sub = "&lt;SUBSCRIPTION_ID&gt;"
@@ -1448,6 +1513,16 @@ Invoke-WebRequest -Uri $url -OutFile .\Install-AzureLocalStack.ps1</pre>
               <td class="mono">nodes: Disconnected</td>
               <td>Nested node VMs did not auto-start with the host.</td>
               <td class="mono">az vm run-command invoke --scripts "@file"</td>
+            </tr>
+            <tr>
+              <td class="mono">The term 'azcopy' is not recognized</td>
+              <td>Build started before package provisioning installed the tooling.</td>
+              <td class="mono">Start-ScheduledTask -TaskName LocalBoxLogonScript</td>
+            </tr>
+            <tr>
+              <td class="mono">GUI source VHDX not found ... Aborting</td>
+              <td>Downstream symptom of the failed download above, not a storage fault.</td>
+              <td>Fix the tooling, then rerun the build.</td>
             </tr>
           </tbody>
         </table>
