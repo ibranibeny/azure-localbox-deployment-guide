@@ -439,7 +439,91 @@ az role assignment create `
         <strong>The ARM deployment finishes long before the instance is usable</strong>
         Once the host is provisioned, a bootstrap script inside it does the real work: creating the nodes, forming the
         cluster, registering it with Azure Arc, deploying the resource bridge, and creating the custom location. That
-        phase is invisible to ARM. A deployment marked <code>Succeeded</code> is not a signal that you can create VMs.
+        phase produces no ARM deployments at all. A deployment marked <code>Succeeded</code> is not a signal that you
+        can create VMs.
+      </div>
+
+      <p>
+        The numbers make the gap obvious. Six ARM deployments cover the entire Azure-side scaffolding and finish in
+        about eleven minutes. The build that follows takes hours and adds nothing to that list.
+      </p>
+
+      <h3>Track the build without opening a session on the host</h3>
+
+      <p>
+        The build does report itself, just not through ARM. It writes a running description into a tag on the resource
+        group, which makes progress a one-line query:
+      </p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>az group show -g $rg --query "tags.DeploymentProgress" -o tsv</pre>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Tag value</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">Preparing Azure Local cluster deployment</td><td>Nodes built and registering with Arc</td></tr>
+            <tr><td class="mono">Validating Azure Local cluster deployment</td><td>Pre-deployment validation running</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note good">
+        <strong>Prefer this over reading logs</strong>
+        It needs no Run Command, no session on the host, and no log parsing. Reach for the logs only once the tag
+        stops changing or something fails.
+      </div>
+
+      <figure>
+        <img src="assets/steps/step-03b-nodes-arc-registered.png" alt="Azure portal resource group showing two Azure Arc machines and a DeploymentProgress tag reading Preparing Azure Local cluster deployment." loading="lazy" />
+        <figcaption>
+          The nodes reach Azure well before the cluster does. Note the <code>DeploymentProgress</code> tag in the
+          Essentials panel, which is the cheapest progress signal available.
+        </figcaption>
+      </figure>
+
+      <h3>The cluster resource appears before the cluster exists</h3>
+
+      <figure>
+        <img src="assets/steps/step-03c-cluster-validating.png" alt="Azure portal Azure Local overview with a banner reading this system is currently being validated, and machine count, model, and core count all empty." loading="lazy" />
+        <figcaption>
+          Named, billed, and already pointing at a custom location, yet <strong>Number of machines</strong> and
+          <strong>Total physical cores</strong> are empty. The banner is the honest signal: the system is still being
+          validated.
+        </figcaption>
+      </figure>
+
+      <p>
+        This is the moment most likely to mislead. The resource exists, so the instinct is to start creating VMs. Judge
+        readiness by the status field instead:
+      </p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>az resource show `
+  -g $rg -n &lt;CLUSTER&gt; `
+  --resource-type Microsoft.AzureStackHCI/clusters --api-version 2024-04-01 `
+  --query "{status:properties.status,connectivity:properties.connectivityStatus}" -o json</pre>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>status</th><th>connectivityStatus</th><th>Can you create VMs?</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">ValidationInProgress</td><td class="mono">NotYetRegistered</td><td><span class="state bad">No</span></td></tr>
+            <tr><td class="mono">ConnectedRecently</td><td class="mono">Connected</td><td><span class="state ok">Yes, once the bridge is Running</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note warn">
+        <strong>deploymentSettings is empty during validation</strong>
+        The per-stage breakdown described below only populates once deployment itself begins. While validation runs,
+        <code>deploymentStatus.steps</code> is an empty array and <code>provisioningState</code> reads
+        <code>Provisioning</code>, which looks like nothing is happening. Use the cluster <code>status</code> field
+        during this window.
       </div>
 
       <h3>When both ARM and the extension report success but nothing was built</h3>
