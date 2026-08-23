@@ -24,6 +24,9 @@
 .PARAMETER ResourceGroup
     Resource group being deployed into.
 
+.PARAMETER ClusterName
+    Azure Local instance to watch for registration, which ends the risk window.
+
 .PARAMETER HostVmName
     The Azure virtual machine that hosts the deployment.
 
@@ -43,6 +46,7 @@
 param(
     [Parameter(Mandatory)][string]$SubscriptionId,
     [Parameter(Mandatory)][string]$ResourceGroup,
+    [string]$ClusterName = 'localboxcluster',
     [string]$HostVmName = 'LocalBox-Client',
     [int]$IntervalSeconds = 300,
     [int]$MaxHours = 8,
@@ -111,7 +115,7 @@ while ((Get-Date) -lt $deadline) {
 
     # Stop early once the instance is registered, since the risk window has closed.
     $status = az resource show `
-        --subscription $SubscriptionId -g $ResourceGroup -n localboxcluster `
+        --subscription $SubscriptionId -g $ResourceGroup -n $ClusterName `
         --resource-type Microsoft.AzureStackHCI/clusters --api-version 2024-04-01 `
         --query 'properties.connectivityStatus' -o tsv 2>$null
 
