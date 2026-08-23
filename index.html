@@ -638,15 +638,163 @@ az role assignment create `
 
     <section id="deployment">
       <h2>5. Deploying Azure Local, and watching it happen</h2>
-      <p class="sub">What the deployment actually does, how long each phase takes, and the one action that destroys it.</p>
+      <p class="sub">Getting the automation, starting it, and reading progress that ARM never reports.</p>
 
-      <h3>What you are deploying</h3>
+      <h3>Get the automation</h3>
 
       <p>
-        Azure Local is not created by a command. There is no <code>az</code> call that produces an instance from
-        nothing. What exists first is hardware: machines running the Azure Local operating system, registered
-        individually with Azure Arc. Deployment is the process that takes those registered machines and turns them
-        into a cluster with a control plane attached to Azure.
+        There is nothing to write. Microsoft publishes the whole deployment as Bicep templates plus the PowerShell
+        that builds the nested instance, and the entire run is driven from one parameter file. Clone the repository
+        and work from the LocalBox Bicep folder:
+      </p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>git clone https://github.com/microsoft/azure_arc.git
+cd azure_arc\azure_jumpstart_localbox\bicep</pre>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>What you cloned</th><th>Its role in the deployment</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">bicep/main.bicep</td><td>The template you submit. Creates the host, network, storage, and workspace.</td></tr>
+            <tr><td class="mono">bicep/main.bicepparam</td><td>The only file you edit.</td></tr>
+            <tr><td class="mono">artifacts/</td><td>The PowerShell that builds the nested instance. Runs inside the host, not from here.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note warn">
+        <strong>Editing the cloned scripts changes nothing</strong>
+        The template hands the host a URL rather than your files, assembled from two parameters:
+        <code>https://raw.githubusercontent.com/&lt;githubAccount&gt;/azure_arc/&lt;githubBranch&gt;/azure_jumpstart_localbox/</code>.
+        The host downloads <code>artifacts/</code> from GitHub while it builds, so an edit in your clone is never read.
+        Changing that automation means forking the repository, pushing, and pointing <code>githubAccount</code> and
+        <code>githubBranch</code> at your fork. Locally, the parameter file is the only file worth touching.
+      </div>
+
+      <h3>Supply the four values the template cannot infer</h3>
+
+      <p>
+        Every other parameter has a working default. These four have none, and the deployment is rejected at
+        submission without them:
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Where the value comes from</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">tenantId</td><td class="mono">az account show --query tenantId -o tsv</td></tr>
+            <tr><td class="mono">spnProviderId</td><td>Object id of the Azure Local resource provider in your tenant. Command below.</td></tr>
+            <tr><td class="mono">windowsAdminUsername</td><td>Your choice. This guide used <code>arcdemo</code>.</td></tr>
+            <tr><td class="mono">windowsAdminPassword</td><td>Your choice, 14 to 123 characters. See the warning below.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>az ad sp list --display-name "Microsoft.AzureStackHCI Resource Provider" `
+  --query "[0].id" -o tsv</pre>
+      </div>
+
+      <div class="note">
+        <strong>An empty result is not an error, it is a missing registration</strong>
+        The service principal only exists once the provider is registered in your tenant. If the command returns
+        nothing, run <code>az provider register --namespace Microsoft.AzureStackHCI</code>, wait for it to report
+        <code>Registered</code>, then query again.
+      </div>
+
+      <div class="note warn">
+        <strong>A dollar sign in the password breaks the build, hours later</strong>
+        The password is consumed by a logon script inside the host, where <code>$</code> begins a variable reference.
+        A password containing one is silently truncated and the script fails partway through the build, with nothing
+        pointing back at the password. The failure looks like a broken deployment, not a bad character.
+      </div>
+
+      <div class="note warn">
+        <strong>The parameter file is tracked by git</strong>
+        <code>main.bicepparam</code> lives inside the cloned repository, so a password typed directly into it is one
+        <code>git add -A</code> away from being committed. Read it from the environment instead:
+        <code>param windowsAdminPassword = readEnvironmentVariable('LOCALBOX_ADMIN_PASSWORD')</code>, and set that
+        variable in the session you deploy from.
+      </div>
+
+      <h3>Check the gate before you commit hours</h3>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Requirement</th><th>Why it bites later if missed</th></tr></thead>
+          <tbody>
+            <tr><td>Resource providers registered, including <code>Microsoft.EdgeMarketplace</code></td><td>Surfaces hours later as an image download failure that looks unrelated.</td></tr>
+            <tr><td><code>Azure Connected Machine Resource Manager</code> on the resource group</td><td>Image downloads fail with <code>Forbidden</code>. See section 4.</td></tr>
+            <tr><td>32 spare Esv6 vCPUs in the target region</td><td>The host is a single <code>Standard_E32s_v6</code>. Short quota fails the run at its first real step.</td></tr>
+            <tr><td>A region the instance supports</td><td><code>azureLocalInstanceLocation</code> accepts eight regions only, listed below.</td></tr>
+            <tr><td>A maintenance window measured in hours</td><td>See <em>Interrupting the host</em> below. This is the one that ends deployments.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>az vm list-usage --location australiaeast -o table | Select-String 'ESv6'</pre>
+      </div>
+
+      <div class="note">
+        <strong>Filtering outside the query is deliberate here</strong>
+        The obvious form uses <code>--query "[?contains(localName,'ESv6')]"</code>, which contains parentheses but no
+        spaces, so PowerShell passes it to <code>az.cmd</code> unquoted and the shell reads the brackets as syntax.
+        Filtering the table afterwards sidesteps it entirely. Section 13 covers why.
+      </div>
+
+      <p>
+        The supported regions are <code class="mono">australiaeast</code>, <code class="mono">southcentralus</code>,
+        <code class="mono">eastus</code>, <code class="mono">westeurope</code>, <code class="mono">southeastasia</code>,
+        <code class="mono">canadacentral</code>, <code class="mono">japaneast</code>, and
+        <code class="mono">centralindia</code>. On physical hardware, DNS resolution for the cluster domain and time
+        synchronisation belong on this list too; in this lab the nested domain controller provides both, which is why
+        they are absent above.
+      </p>
+
+      <h3>Start the deployment</h3>
+
+      <p>
+        Create the resource group with the governance tags already applied, then submit the template from the
+        <code>bicep</code> folder. Naming the deployment makes it findable later, when the portal lists several:
+      </p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>$rg  = '&lt;RESOURCE-GROUP&gt;'
+$loc = 'australiaeast'
+
+az group create --name $rg --location $loc `
+  --tags CostControl=Ignore SecurityControl=Ignore Project=jumpstart_LocalBox
+
+az deployment group create -g $rg -f main.bicep -p main.bicepparam `
+  --name "localbox-$(Get-Date -Format 'yyyyMMdd-HHmm')"</pre>
+      </div>
+
+      <div class="note warn">
+        <strong>The tags are applied once, and the deployment strips them off again</strong>
+        <code>governResourceTags</code> defaults to <code>true</code> and stamps <code>CostControl: Ignore</code> and
+        <code>SecurityControl: Ignore</code> onto the resources it creates, and the official guidance is that Microsoft
+        internal subscriptions must leave it that way. What that guidance does not mention is what happens next: the
+        automation writes its progress tag by replacing the tag set rather than merging into it, which removes those
+        same tags from the host. Where cost automation is active, that is precisely what deallocates the host mid-run
+        and ends the deployment. Tagging the resource group as well, as above, keeps a copy the automation never
+        rewrites. See <em>Why a lab deallocates itself mid-deployment</em> below.
+      </div>
+
+      <h3>What you just started</h3>
+
+      <p>
+        That command returns in about eleven minutes, and at that point almost nothing you care about exists. Azure
+        Local is not created by a command: on real hardware, machines run the Azure Local operating system, register
+        individually with Azure Arc, and deployment is the process that turns those registered machines into a cluster
+        with a control plane attached to Azure. LocalBox reproduces that sequence inside a single virtual machine,
+        which is why the work that matters begins only once ARM has already reported success.
       </p>
 
       <div class="table-wrap">
@@ -666,22 +814,6 @@ az role assignment create `
         Phases 2 to 4 produce no deployment entries at all. Six ARM deployments cover the whole Azure side and finish
         in about eleven minutes, while the work that actually matters runs for hours afterwards with nothing to show
         for it in the Deployments blade.
-      </div>
-
-      <h3>Before you start</h3>
-
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Requirement</th><th>Why it bites later if missed</th></tr></thead>
-          <tbody>
-            <tr><td>Machines registered with Arc, reporting <code>Connected</code></td><td>Deployment has nothing to build on.</td></tr>
-            <tr><td>Resource providers registered, including <code>Microsoft.EdgeMarketplace</code></td><td>Surfaces hours later as an image download failure that looks unrelated.</td></tr>
-            <tr><td><code>Azure Connected Machine Resource Manager</code> on the resource group</td><td>Image downloads fail with <code>Forbidden</code>. See section 4.</td></tr>
-            <tr><td>DNS that resolves the cluster domain</td><td>Validation fails at the DNS stage, late in the run.</td></tr>
-            <tr><td>Time synchronisation</td><td>Domain join and certificate operations fail in confusing ways.</td></tr>
-            <tr><td>A maintenance window measured in hours</td><td>See the warning below. This is the one that ends deployments.</td></tr>
-          </tbody>
-        </table>
       </div>
 
       <div class="note warn">
@@ -2195,6 +2327,9 @@ Invoke-WebRequest -Uri $url -OutFile .\Install-AzureLocalStack.ps1</pre>
         <li><a href="https://learn.microsoft.com/azure/azure-local/update/about-updates-23h2">About updates for Azure Local</a></li>
         <li><a href="https://learn.microsoft.com/azure/azure-arc/servers/manage-agent">Manage Azure Connected Machine agent versions</a></li>
         <li><a href="https://learn.microsoft.com/azure/architecture/hybrid/azure-local-baseline">Azure Local baseline reference architecture</a></li>
+        <li><a href="https://jumpstart.azure.com/azure_jumpstart_localbox/getting_started">Arc Jumpstart LocalBox: getting started</a></li>
+        <li><a href="https://jumpstart.azure.com/azure_jumpstart_localbox/deployment_az">Deploy LocalBox infrastructure with Azure Bicep</a></li>
+        <li><a href="https://github.com/microsoft/azure_arc">microsoft/azure_arc, the repository cloned in section 5</a></li>
       </ul>
     </section>
   </main>
