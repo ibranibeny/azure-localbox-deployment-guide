@@ -144,12 +144,21 @@ th { background: var(--cp-surface-soft); font-weight: 600; font-size: 0.8rem; te
 tbody tr:last-child td { border-bottom: none; }
 
 .state { font-family: Consolas, "Courier New", monospace; font-size: 0.78rem; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+
+.part-divider { margin: 0 0 44px; padding: 0 0 22px; border-bottom: 2px solid var(--cp-accent); }
+.part-divider:not(:first-child) { margin-top: 24px; }
+.part-label { font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--cp-accent); margin: 0 0 6px; font-weight: 600; }
+.part-title { font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 600; letter-spacing: -0.02em; margin: 0 0 10px; }
+.part-sub { color: var(--cp-text-muted); max-width: 70ch; margin: 0; font-size: 0.95rem; }
+
+nav.toc .toc-part { font-size: 0.7rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--cp-accent); font-weight: 600; margin: 18px 0 6px 10px; }
+nav.toc .toc-part:first-child { margin-top: 0; }
+nav.toc li.toc-part { counter-increment: none; list-style: none; }
 .state.ok { background: var(--cp-accent-soft); color: var(--cp-success); border: 1px solid var(--cp-success); }
 .state.bad { background: var(--cp-accent-soft); color: var(--cp-danger); border: 1px solid var(--cp-danger); }
 .state.wait { background: var(--cp-accent-soft); color: var(--cp-warning); border: 1px solid var(--cp-warning); }
 
-figure { margin: 0 0 18px; border: 1px solid var(--cp-border); border-radius: 0.625rem; overflow: hidden; background: var(--cp-surface); }
-figure svg, figure img { display: block; width: 100%; height: auto; }
+figure { margin: 0 0 18px; border: 1px solid var(--cp-border); border-radius: 0.625rem; overflow: hidden; background: var(--cp-surface); }figure svg, figure img { display: block; width: 100%; height: auto; }
 figure img { background: #ffffff; }
 figcaption { font-size: 0.8rem; color: var(--cp-text-muted); padding: 10px 12px; border-top: 1px solid var(--cp-border); background: var(--cp-surface-soft); }
 
@@ -223,12 +232,14 @@ footer { border-top: 1px solid var(--cp-border); background: var(--cp-bg-elevate
 <div class="layout">
   <nav class="toc" id="toc" aria-label="Table of contents">
     <ol>
+      <li class="toc-part" role="presentation">Part one &mdash; Guidance</li>
+      <li><a href="#verify">Verifying the control plane</a></li>
       <li><a href="#guidance">Deployment guidance</a></li>
       <li><a href="#architecture">Architecture overview</a></li>
       <li><a href="#prerequisites">Azure prerequisites</a></li>
       <li><a href="#deployment">Deploying Azure Local</a></li>
       <li><a href="#empty-blade">Diagnosing the empty VM blade</a></li>
-      <li><a href="#verify">Verifying the control plane</a></li>
+      <li class="toc-part" role="presentation">Part two &mdash; Runbook</li>
       <li><a href="#lnet">Logical networks and IP pools</a></li>
       <li><a href="#windows-image">Windows VM image</a></li>
       <li><a href="#linux-image">Linux VM image</a></li>
@@ -246,8 +257,123 @@ footer { border-top: 1px solid var(--cp-border); background: var(--cp-bg-elevate
   <main>
     <button class="nav-toggle" id="navToggle" aria-expanded="false" aria-controls="toc">Table of contents</button>
 
+    <div class="part-divider">
+      <p class="part-label">Part one</p>
+      <h2 class="part-title">Deployment guidance</h2>
+      <p class="part-sub">
+        Understanding and diagnosis. Read this first, whatever state you have arrived in. It starts with establishing
+        what is actually true, because almost every problem in the second part turns out to be a control plane that
+        was not in the state the operator assumed.
+      </p>
+    </div>
+
+    <section id="verify">
+      <h2>1. Verifying the control plane</h2>
+      <p class="sub">The first thing to do in any situation. Everything else depends on the answer.</p>
+
+      <p>
+        Before deploying, before troubleshooting, before creating anything: find out what exists and what is running.
+        This single block answers both questions.
+      </p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>$sub = "&lt;SUBSCRIPTION_ID&gt;"
+$rg  = "&lt;RESOURCE_GROUP&gt;"
+
+$all = az resource list --subscription $sub -g $rg -o json | ConvertFrom-Json
+
+$want = 'Microsoft.ResourceConnector/appliances',
+        'Microsoft.ExtendedLocation/customLocations',
+        'Microsoft.AzureStackHCI/logicalNetworks',
+        'Microsoft.AzureStackHCI/storageContainers',
+        'Microsoft.AzureStackHCI/galleryImages',
+        'Microsoft.AzureStackHCI/marketplaceGalleryImages'
+
+$all |
+  Where-Object { $want -contains $_.type } |
+  Select-Object name, type |
+  Sort-Object type |
+  Format-Table -AutoSize</pre>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Resource</th><th>Type</th><th>Healthy value</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">&lt;cluster&gt;-arcbridge</td><td class="mono">appliances</td><td><span class="state ok">Running</span></td></tr>
+            <tr><td class="mono">&lt;custom-location&gt;</td><td class="mono">customLocations</td><td><span class="state ok">Succeeded</span></td></tr>
+            <tr><td class="mono">&lt;cluster&gt;-InfraLNET</td><td class="mono">logicalNetworks</td><td><span class="state ok">Succeeded</span></td></tr>
+            <tr><td class="mono">UserStorage1 / UserStorage2</td><td class="mono">storageContainers</td><td><span class="state ok">Succeeded</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note warn">
+        <strong>Succeeded is not the same as Running</strong>
+        On the resource bridge, <code>provisioningState</code> can read <code>Succeeded</code> while
+        <code>status</code> is still <code>WaitingForHeartbeat</code>. The runtime <code>status</code> is what gates
+        VM creation, and it is the single most useful field in this entire document.
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>az resource show `
+  --ids "/subscriptions/$sub/resourceGroups/$rg/providers/Microsoft.ResourceConnector/appliances/&lt;CLUSTER&gt;-arcbridge" `
+  --api-version 2022-10-27 `
+  --query "properties.status" -o tsv</pre>
+      </div>
+
+      <h3>What the answer tells you to do next</h3>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>What you found</th><th>What it means</th><th>Go to</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>No cluster resource at all</td>
+              <td>Nothing has been deployed here.</td>
+              <td>Section 5</td>
+            </tr>
+            <tr>
+              <td>Cluster exists, no bridge</td>
+              <td>Deployment is still running, or it died part-way.</td>
+              <td>Section 5, then check the age of the last report</td>
+            </tr>
+            <tr>
+              <td>Bridge <code>WaitingForHeartbeat</code></td>
+              <td>Appliance created but not yet alive. Normal for a while.</td>
+              <td>Wait. Do not intervene.</td>
+            </tr>
+            <tr>
+              <td>Bridge <code>Offline</code></td>
+              <td>Something that was working has stopped.</td>
+              <td>Section 14</td>
+            </tr>
+            <tr>
+              <td>Bridge <code>Running</code>, no custom location</td>
+              <td>Deployment has not finished its last step.</td>
+              <td>Section 5</td>
+            </tr>
+            <tr>
+              <td>Bridge <code>Running</code> and custom location present</td>
+              <td>The control plane is healthy. You can build workloads.</td>
+              <td>Part two</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note">
+        <strong>Why this comes first</strong>
+        Every failure documented in this guide was diagnosed faster once this block had been run. An empty VM blade, a
+        rejected AKS cluster, an image that will not download: in each case the useful first move was to establish the
+        control plane state rather than to retry the command that failed.
+      </div>
+    </section>
+
     <section id="guidance">
-      <h2>1. Deployment guidance</h2>
+      <h2>2. Deployment guidance</h2>
       <p class="sub">Read this before running anything. It is the shape of the work, not the commands.</p>
 
       <p>
@@ -315,8 +441,8 @@ footer { border-top: 1px solid var(--cp-border); background: var(--cp-bg-elevate
         <table>
           <thead><tr><th>Stage</th><th>You are done when</th><th>Covered in</th></tr></thead>
           <tbody>
-            <tr><td>Prerequisites</td><td>Providers registered, roles assigned</td><td>Section 3</td></tr>
-            <tr><td>Deployment</td><td>Instance <code>Connected</code>, bridge <code>Running</code>, custom location exists</td><td>Section 4</td></tr>
+            <tr><td>Prerequisites</td><td>Providers registered, roles assigned</td><td>Section 4</td></tr>
+            <tr><td>Deployment</td><td>Instance <code>Connected</code>, bridge <code>Running</code>, custom location exists</td><td>Section 5</td></tr>
             <tr><td>Networking</td><td>Logical network has an IP pool</td><td>Section 7</td></tr>
             <tr><td>Images</td><td>Image reports 100 percent</td><td>Sections 8 and 9</td></tr>
             <tr><td>Workloads</td><td>VM has an address from the pool</td><td>Sections 10 and 11</td></tr>
@@ -338,7 +464,7 @@ footer { border-top: 1px solid var(--cp-border); background: var(--cp-bg-elevate
     </section>
 
     <section id="architecture">
-      <h2>2. Architecture overview</h2>
+      <h2>3. Architecture overview</h2>
       <p class="sub">Knowing which component owns which responsibility explains almost every failure mode in this runbook.</p>
 
       <p>
@@ -431,7 +557,7 @@ footer { border-top: 1px solid var(--cp-border); background: var(--cp-bg-elevate
     </section>
 
     <section id="prerequisites">
-      <h2>3. Azure prerequisites</h2>
+      <h2>4. Azure prerequisites</h2>
       <p class="sub">Done once per subscription. A missing provider surfaces much later as an error that looks unrelated.</p>
 
       <div class="code">
@@ -511,7 +637,7 @@ az role assignment create `
     </section>
 
     <section id="deployment">
-      <h2>4. Deploying Azure Local, and watching it happen</h2>
+      <h2>5. Deploying Azure Local, and watching it happen</h2>
       <p class="sub">What the deployment actually does, how long each phase takes, and the one action that destroys it.</p>
 
       <h3>What you are deploying</h3>
@@ -550,7 +676,7 @@ az role assignment create `
           <tbody>
             <tr><td>Machines registered with Arc, reporting <code>Connected</code></td><td>Deployment has nothing to build on.</td></tr>
             <tr><td>Resource providers registered, including <code>Microsoft.EdgeMarketplace</code></td><td>Surfaces hours later as an image download failure that looks unrelated.</td></tr>
-            <tr><td><code>Azure Connected Machine Resource Manager</code> on the resource group</td><td>Image downloads fail with <code>Forbidden</code>. See section 3.</td></tr>
+            <tr><td><code>Azure Connected Machine Resource Manager</code> on the resource group</td><td>Image downloads fail with <code>Forbidden</code>. See section 4.</td></tr>
             <tr><td>DNS that resolves the cluster domain</td><td>Validation fails at the DNS stage, late in the run.</td></tr>
             <tr><td>Time synchronisation</td><td>Domain join and certificate operations fail in confusing ways.</td></tr>
             <tr><td>A maintenance window measured in hours</td><td>See the warning below. This is the one that ends deployments.</td></tr>
@@ -929,7 +1055,7 @@ $validation.steps |
     </section>
 
     <section id="empty-blade">
-      <h2>5. Diagnosing the empty VM blade</h2>
+      <h2>6. Diagnosing the empty VM blade</h2>
       <p class="sub">The portal shows two different messages for this condition, and one of them is misleading.</p>
 
       <figure>
@@ -971,57 +1097,14 @@ $validation.steps |
       </div>
     </section>
 
-    <section id="verify">
-      <h2>6. Verifying the control plane</h2>
-      <p class="sub">One block that confirms every layer 2 and layer 3 resource actually exists.</p>
-
-      <div class="code">
-        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
-<pre>$sub = "&lt;SUBSCRIPTION_ID&gt;"
-$rg  = "&lt;RESOURCE_GROUP&gt;"
-
-$all = az resource list --subscription $sub -g $rg -o json | ConvertFrom-Json
-
-$want = 'Microsoft.ResourceConnector/appliances',
-        'Microsoft.ExtendedLocation/customLocations',
-        'Microsoft.AzureStackHCI/logicalNetworks',
-        'Microsoft.AzureStackHCI/storageContainers',
-        'Microsoft.AzureStackHCI/galleryImages',
-        'Microsoft.AzureStackHCI/marketplaceGalleryImages'
-
-$all |
-  Where-Object { $want -contains $_.type } |
-  Select-Object name, type |
-  Sort-Object type |
-  Format-Table -AutoSize</pre>
-      </div>
-
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Resource</th><th>Type</th><th>Healthy value</th></tr></thead>
-          <tbody>
-            <tr><td class="mono">&lt;cluster&gt;-arcbridge</td><td class="mono">appliances</td><td><span class="state ok">Running</span></td></tr>
-            <tr><td class="mono">&lt;custom-location&gt;</td><td class="mono">customLocations</td><td><span class="state ok">Succeeded</span></td></tr>
-            <tr><td class="mono">&lt;cluster&gt;-InfraLNET</td><td class="mono">logicalNetworks</td><td><span class="state ok">Succeeded</span></td></tr>
-            <tr><td class="mono">UserStorage1 / UserStorage2</td><td class="mono">storageContainers</td><td><span class="state ok">Succeeded</span></td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="note">
-        <strong>Succeeded is not the same as Running</strong>
-        On the resource bridge, <code>provisioningState</code> can read <code>Succeeded</code> while
-        <code>status</code> is still <code>WaitingForHeartbeat</code>. The runtime <code>status</code> is what gates VM creation.
-      </div>
-
-      <div class="code">
-        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
-<pre>az resource show `
-  --ids "/subscriptions/$sub/resourceGroups/$rg/providers/Microsoft.ResourceConnector/appliances/&lt;CLUSTER&gt;-arcbridge" `
-  --api-version 2022-10-27 `
-  --query "properties.status" -o tsv</pre>
-      </div>
-    </section>
+    <div class="part-divider">
+      <p class="part-label">Part two</p>
+      <h2 class="part-title">Runbook</h2>
+      <p class="part-sub">
+        Procedures and the errors they produce. Everything here assumes the control plane is healthy. If a command in
+        this part fails unexpectedly, return to section 1 before debugging the command itself.
+      </p>
+    </div>
 
     <section id="lnet">
       <h2>7. Logical networks and IP pools</h2>
@@ -1621,7 +1704,7 @@ az rest --method get --url "$base/updates?api-version=2024-04-01" `
       </div>
 
       <div class="note warn">
-        <strong>The same trap as section 6, seen from the other side</strong>
+        <strong>The same trap as section 1, seen from the other side</strong>
         <code>provisioningState</code> still reads <code>Succeeded</code> because the ARM record is intact and nothing
         was deleted. Only the runtime <code>status</code> field tracks whether the appliance is actually alive. Judge
         availability by <code>status</code>, never by <code>provisioningState</code>.
