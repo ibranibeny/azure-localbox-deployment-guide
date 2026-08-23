@@ -238,6 +238,7 @@ footer { border-top: 1px solid var(--cp-border); background: var(--cp-bg-elevate
       <li><a href="#architecture">Architecture overview</a></li>
       <li><a href="#prerequisites">Azure prerequisites</a></li>
       <li><a href="#deployment">Deploying Azure Local</a></li>
+      <li><a href="#rundown">Deployment rundown</a></li>
       <li><a href="#empty-blade">Diagnosing the empty VM blade</a></li>
       <li class="toc-part" role="presentation">Part two &mdash; Runbook</li>
       <li><a href="#lnet">Logical networks and IP pools</a></li>
@@ -348,7 +349,7 @@ $all |
             <tr>
               <td>Bridge <code>Offline</code></td>
               <td>Something that was working has stopped.</td>
-              <td>Section 14</td>
+              <td>Section 15</td>
             </tr>
             <tr>
               <td>Bridge <code>Running</code>, no custom location</td>
@@ -443,9 +444,9 @@ $all |
           <tbody>
             <tr><td>Prerequisites</td><td>Providers registered, roles assigned</td><td>Section 4</td></tr>
             <tr><td>Deployment</td><td>Instance <code>Connected</code>, bridge <code>Running</code>, custom location exists</td><td>Section 5</td></tr>
-            <tr><td>Networking</td><td>Logical network has an IP pool</td><td>Section 7</td></tr>
-            <tr><td>Images</td><td>Image reports 100 percent</td><td>Sections 8 and 9</td></tr>
-            <tr><td>Workloads</td><td>VM has an address from the pool</td><td>Sections 10 and 11</td></tr>
+            <tr><td>Networking</td><td>Logical network has an IP pool</td><td>Section 8</td></tr>
+            <tr><td>Images</td><td>Image reports 100 percent</td><td>Sections 9 and 10</td></tr>
+            <tr><td>Workloads</td><td>VM has an address from the pool</td><td>Sections 11 and 12</td></tr>
           </tbody>
         </table>
       </div>
@@ -745,7 +746,7 @@ cd azure_arc\azure_jumpstart_localbox\bicep</pre>
         <strong>Filtering outside the query is deliberate here</strong>
         The obvious form uses <code>--query "[?contains(localName,'ESv6')]"</code>, which contains parentheses but no
         spaces, so PowerShell passes it to <code>az.cmd</code> unquoted and the shell reads the brackets as syntax.
-        Filtering the table afterwards sidesteps it entirely. Section 13 covers why.
+        Filtering the table afterwards sidesteps it entirely. Section 14 covers why.
       </div>
 
       <p>
@@ -1186,8 +1187,130 @@ $validation.steps |
       </div>
     </section>
 
+    <section id="rundown">
+      <h2>6. Deployment rundown</h2>
+      <p class="sub">The whole path on one page, with the checkpoint that proves each step actually happened.</p>
+
+      <p>
+        Everything below is covered in more depth elsewhere. This section exists for the second time you do this,
+        when you no longer need the explanations and want the sequence, the checkpoint, and a realistic clock.
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Step</th><th>Checkpoint that proves it worked</th><th>Typical</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">1</td><td>Register resource providers, including <code>Microsoft.EdgeMarketplace</code></td><td>All report <code>Registered</code></td><td class="mono">~5 min</td></tr>
+            <tr><td class="mono">2</td><td>Grant <code>Azure Connected Machine Resource Manager</code> on the resource group</td><td>Role assignment listed on the group</td><td class="mono">~1 min</td></tr>
+            <tr><td class="mono">3</td><td>Confirm 32 spare Esv6 vCPUs in the region</td><td><code>az vm list-usage</code> shows headroom</td><td class="mono">~1 min</td></tr>
+            <tr><td class="mono">4</td><td>Clone the automation</td><td><code>bicep/main.bicep</code> present</td><td class="mono">~2 min</td></tr>
+            <tr><td class="mono">5</td><td>Fill the four parameters, password from the environment</td><td><code>az deployment group validate</code> passes</td><td class="mono">~5 min</td></tr>
+            <tr><td class="mono">6</td><td>Create the resource group with governance tags</td><td>Tags visible on the group</td><td class="mono">seconds</td></tr>
+            <tr><td class="mono">7</td><td>Submit the template</td><td>Six ARM deployments <code>Succeeded</code></td><td class="mono">~11 min</td></tr>
+            <tr><td class="mono">8</td><td>Nested build inside the host</td><td><code>tags.DeploymentProgress</code> advances</td><td class="mono">~1&ndash;2 h</td></tr>
+            <tr><td class="mono">9</td><td>Nodes onboard to Arc</td><td><code>AzLHOST1</code> and <code>AzLHOST2</code> appear</td><td class="mono">~15 min</td></tr>
+            <tr><td class="mono">10</td><td>Cluster validation and deployment</td><td>56 steps in <code>deploymentSettings</code></td><td class="mono">~2.5&ndash;3 h</td></tr>
+            <tr><td class="mono">11</td><td>Instance registers with Azure</td><td><code>connectivityStatus: Connected</code></td><td class="mono">within step 10</td></tr>
+            <tr><td class="mono">12</td><td>Bridge and custom location</td><td>Bridge <code>status: Running</code></td><td class="mono">within step 10</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note warn">
+        <strong>Steps 8 to 12 produce no ARM deployment entries</strong>
+        The Deployments blade goes quiet after step 7 and stays quiet for hours. That silence is the normal state,
+        not a symptom. Track progress through the tag in step 8 and the step list in step 10 instead.
+      </div>
+
+      <h3>The two queries that answer "is it still alive"</h3>
+
+      <p>
+        During the nested build, the resource group tag is the cheapest signal. It is a single string and it moves
+        every few minutes:
+      </p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>az group show -n $rg --query "tags.DeploymentProgress" -o tsv</pre>
+      </div>
+
+      <p>
+        Once the cluster resource exists, the real detail lives on its child resource, not on the cluster itself. The
+        cluster only ever reports <code>DeploymentInProgress</code>, which cannot separate a healthy 45-minute step
+        from an orchestrator that died an hour ago:
+      </p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>$id = "/subscriptions/$sub/resourceGroups/$rg" +
+      "/providers/Microsoft.AzureStackHCI/clusters/&lt;CLUSTER&gt;/deploymentSettings/default"
+
+$steps = (az resource show --ids $id --api-version 2024-04-01 -o json |
+          ConvertFrom-Json).properties.reportedProperties.deploymentStatus.steps[0].steps
+
+$steps | Where-Object status -eq 'InProgress' |
+  Select-Object fullStepIndex, name, startTimeUtc</pre>
+      </div>
+
+      <div class="note">
+        <strong>Why the child resource and not the cluster</strong>
+        <code>deploymentSettings</code> is a child, so it does not appear in <code>az resource list</code> and is easy
+        to conclude does not exist. It has to be read by full id. <code>Watch-ClusterDeployment.ps1</code> in this
+        repository polls it every five minutes and flags a step that has been running past the documented worst case.
+      </div>
+
+      <h3>Renaming the instance requires a fork</h3>
+
+      <div class="note warn">
+        <strong>The cluster name is not a deployment parameter</strong>
+        It is hardcoded in <code>artifacts/PowerShell/LocalBox-Config.psd1</code>, and the config is loaded with
+        <code>Import-PowerShellDataFile</code> from that file alone, so no environment variable overrides it.
+        Redeploying with different Bicep parameters produces the same name again.
+      </div>
+
+      <p>
+        Because the host downloads its automation from GitHub rather than from your clone, changing the name means
+        serving the artifacts yourself:
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Step</th><th>Detail</th></tr></thead>
+          <tbody>
+            <tr><td>Publish the artifacts under your account</td><td>The repository must be named <code class="mono">azure_arc</code>, because <code>templateBaseUrl</code> hardcodes that name.</td></tr>
+            <tr><td>Keep the folder path identical</td><td><code class="mono">azure_jumpstart_localbox/artifacts/…</code></td></tr>
+            <tr><td>Edit the cluster name</td><td><code class="mono">ClusterName = "&lt;your-name&gt;"</code></td></tr>
+            <tr><td>Point the deployment at it</td><td><code class="mono">githubAccount</code> and <code class="mono">githubBranch</code></td></tr>
+            <tr><td>Publish only <code class="mono">artifacts/</code></td><td>See the warning below. This is not a tidiness point.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note warn">
+        <strong>Publishing the whole folder publishes your password</strong>
+        The repository has to be public for <code>raw.githubusercontent.com</code> to serve it, and
+        <code>bicep/main.bicepparam</code> sits in the same folder carrying <code>windowsAdminPassword</code> in
+        clear text. Copying the folder wholesale puts that password on the public internet. Only
+        <code>artifacts/</code> is ever fetched at runtime, so publish that and nothing else. Verify afterwards rather
+        than assuming:
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>git log --all -p | Select-String 'windowsAdminPassword'</pre>
+      </div>
+
+      <div class="note">
+        <strong>If it was already pushed</strong>
+        Making the repository private does not undo it, because
+        <code>raw.githubusercontent.com</code> keeps serving a cached copy for several minutes, and scanners watch new
+        public repositories continuously. Rewriting history removes the file but not the exposure. The only real
+        remedy is rotating the credential: <code>az vm user update -g $rg -n &lt;VM&gt; -u &lt;user&gt; -p &lt;new&gt;</code>.
+      </div>
+    </section>
+
     <section id="empty-blade">
-      <h2>6. Diagnosing the empty VM blade</h2>
+      <h2>7. Diagnosing the empty VM blade</h2>
       <p class="sub">The portal shows two different messages for this condition, and one of them is misleading.</p>
 
       <figure>
@@ -1239,7 +1362,7 @@ $validation.steps |
     </div>
 
     <section id="lnet">
-      <h2>7. Logical networks and IP pools</h2>
+      <h2>8. Logical networks and IP pools</h2>
       <p class="sub">The automatically created InfraLNET is not for workloads, and a network without an IP pool will break AKS.</p>
 
       <p>
@@ -1320,7 +1443,7 @@ az stack-hci-vm network lnet create `
     </section>
 
     <section id="windows-image">
-      <h2>8. Windows VM image</h2>
+      <h2>9. Windows VM image</h2>
       <p class="sub">Windows images can be pulled straight from Azure Marketplace by URN.</p>
 
       <div class="code">
@@ -1448,7 +1571,7 @@ $d = az resource show --ids $id --api-version 2025-04-01-preview -o json | Conve
       <div class="note">
         <strong>Expect this after restarting a lab</strong>
         Interruptions are more likely while the cluster is still settling, for example shortly after the sequence in
-        section 14. A download that fails once at a high percentage and then completes on retry is normal behaviour,
+        section 15. A download that fails once at a high percentage and then completes on retry is normal behaviour,
         not a symptom worth investigating further.
       </div>
 
@@ -1474,7 +1597,7 @@ $d = az resource show --ids $id --api-version 2025-04-01-preview -o json | Conve
     </section>
 
     <section id="linux-image">
-      <h2>9. Linux VM image</h2>
+      <h2>10. Linux VM image</h2>
       <p class="sub">Linux cannot be pulled by URN. The supported path builds the VHD yourself.</p>
 
       <div class="note">
@@ -1591,7 +1714,7 @@ ERROR CODE: NoAuthenticationInformation
     </section>
 
     <section id="create-vm">
-      <h2>10. Creating a VM</h2>
+      <h2>11. Creating a VM</h2>
       <p class="sub">With an image, a logical network, and a storage path in place.</p>
 
       <div class="code">
@@ -1642,7 +1765,7 @@ az stack-hci-vm create `
     </section>
 
     <section id="aks">
-      <h2>11. AKS enabled by Azure Arc</h2>
+      <h2>12. AKS enabled by Azure Arc</h2>
       <p class="sub">AKS reuses the same logical network, but validates it far more strictly than Arc VMs do.</p>
 
       <p>
@@ -1710,7 +1833,7 @@ az aksarc create `
     </section>
 
     <section id="arc-agent">
-      <h2>12. Updating the Arc agent</h2>
+      <h2>13. Updating the Arc agent</h2>
       <p class="sub">On Azure Local nodes the rules differ from ordinary Arc-enabled servers.</p>
 
       <div class="note warn">
@@ -1756,7 +1879,7 @@ az rest --method get --url "$base/updates?api-version=2024-04-01" `
     </section>
 
     <section id="pitfalls">
-      <h2>13. Windows CLI pitfalls</h2>
+      <h2>14. Windows CLI pitfalls</h2>
       <p class="sub">These consumed the most time precisely because they do not look like errors.</p>
 
       <div class="table-wrap">
@@ -1814,7 +1937,7 @@ az rest --method get --url "$base/updates?api-version=2024-04-01" `
     </section>
 
     <section id="restart">
-      <h2>14. Restarting a stopped host</h2>
+      <h2>15. Restarting a stopped host</h2>
       <p class="sub">Everything reports Offline, yet nothing is broken. This is the most alarming-looking failure in a lab.</p>
 
       <p>
@@ -2005,7 +2128,7 @@ az resource show `
     </section>
 
     <section id="automation">
-      <h2>15. Automation script</h2>
+      <h2>16. Automation script</h2>
       <p class="sub">Everything in this runbook, as one idempotent PowerShell script.</p>
 
       <h3>Getting the script</h3>
@@ -2136,7 +2259,7 @@ Invoke-WebRequest -Uri $url -OutFile .\Install-AzureLocalStack.ps1</pre>
     </section>
 
     <section id="fixes">
-      <h2>16. Error to fix-command reference</h2>
+      <h2>17. Error to fix-command reference</h2>
       <p class="sub">Every failure encountered during one full deployment cycle, with the command that resolved it.</p>
 
       <p>
@@ -2311,7 +2434,7 @@ Invoke-WebRequest -Uri $url -OutFile .\Install-AzureLocalStack.ps1</pre>
     </section>
 
     <section id="references">
-      <h2>17. References</h2>
+      <h2>18. References</h2>
       <p class="sub">Every procedure here follows the official documentation below.</p>
       <ul>
         <li><a href="https://learn.microsoft.com/azure/azure-arc/resource-bridge/overview">What is Azure Arc resource bridge?</a></li>
