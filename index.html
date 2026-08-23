@@ -225,7 +225,7 @@ footer { border-top: 1px solid var(--cp-border); background: var(--cp-bg-elevate
     <ol>
       <li><a href="#architecture">Architecture overview</a></li>
       <li><a href="#prerequisites">Azure prerequisites</a></li>
-      <li><a href="#deployment">Monitoring deployment</a></li>
+      <li><a href="#deployment">Deploying Azure Local</a></li>
       <li><a href="#empty-blade">Diagnosing the empty VM blade</a></li>
       <li><a href="#verify">Verifying the control plane</a></li>
       <li><a href="#lnet">Logical networks and IP pools</a></li>
@@ -419,8 +419,115 @@ az role assignment create `
     </section>
 
     <section id="deployment">
-      <h2>3. Monitoring deployment</h2>
-      <p class="sub">Deployment runs roughly 54 stages. Status is layered, and ARM does not tell the whole story.</p>
+      <h2>3. Deploying Azure Local, and watching it happen</h2>
+      <p class="sub">What the deployment actually does, how long each phase takes, and the one action that destroys it.</p>
+
+      <h3>What you are deploying</h3>
+
+      <p>
+        Azure Local is not created by a command. There is no <code>az</code> call that produces an instance from
+        nothing. What exists first is hardware: machines running the Azure Local operating system, registered
+        individually with Azure Arc. Deployment is the process that takes those registered machines and turns them
+        into a cluster with a control plane attached to Azure.
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Phase</th><th>What happens</th><th>Where it runs</th><th>Observed duration</th></tr></thead>
+          <tbody>
+            <tr><td>1. Azure scaffolding</td><td>Network, storage, workspace, host</td><td>ARM</td><td class="mono">~11 min</td></tr>
+            <tr><td>2. Build</td><td>Nodes created, domain, cluster object</td><td>Inside the host</td><td class="mono">~1 h</td></tr>
+            <tr><td>3. Validation</td><td>~20 checks: network, storage, AD, Arc</td><td>On the nodes</td><td class="mono">~25 min</td></tr>
+            <tr><td>4. Cluster deployment</td><td>Storage Spaces, Arc bridge, custom location</td><td>On the nodes</td><td class="mono">1&ndash;3 h</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note warn">
+        <strong>Only phase 1 is an ARM deployment</strong>
+        Phases 2 to 4 produce no deployment entries at all. Six ARM deployments cover the whole Azure side and finish
+        in about eleven minutes, while the work that actually matters runs for hours afterwards with nothing to show
+        for it in the Deployments blade.
+      </div>
+
+      <h3>Before you start</h3>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Requirement</th><th>Why it bites later if missed</th></tr></thead>
+          <tbody>
+            <tr><td>Machines registered with Arc, reporting <code>Connected</code></td><td>Deployment has nothing to build on.</td></tr>
+            <tr><td>Resource providers registered, including <code>Microsoft.EdgeMarketplace</code></td><td>Surfaces hours later as an image download failure that looks unrelated.</td></tr>
+            <tr><td><code>Azure Connected Machine Resource Manager</code> on the resource group</td><td>Image downloads fail with <code>Forbidden</code>. See section 2.</td></tr>
+            <tr><td>DNS that resolves the cluster domain</td><td>Validation fails at the DNS stage, late in the run.</td></tr>
+            <tr><td>Time synchronisation</td><td>Domain join and certificate operations fail in confusing ways.</td></tr>
+            <tr><td>A maintenance window measured in hours</td><td>See the warning below. This is the one that ends deployments.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note warn">
+        <strong>Interrupting the host does not pause deployment, it ends it</strong>
+        If the machine hosting a nested lab is deallocated part-way through, the deployment does not resume when it
+        comes back. Starting the host again restores every layer &mdash; the guests run, the nodes report
+        <code>Connected</code>, the cluster object still exists &mdash; and nothing continues. The instance sits at
+        <code>DeploymentInProgress</code> permanently.
+      </div>
+
+      <p>
+        The tell is a timestamp, not a status. Compare when the cluster last reported against the current time. A
+        healthy deployment reports every few minutes:
+      </p>
+
+      <div class="code">
+        <div class="code-head"><span class="code-lang">PowerShell</span><button class="copy-btn" type="button">Copy</button></div>
+<pre>$c = az resource show -g $rg -n &lt;CLUSTER&gt; `
+  --resource-type Microsoft.AzureStackHCI/clusters --api-version 2024-04-01 -o json |
+  ConvertFrom-Json
+
+$last = $c.properties.reportedProperties.lastUpdated
+$age  = ((Get-Date).ToUniversalTime() - [datetime]$last).TotalHours
+
+"status: $($c.properties.status)"
+"last reported: {0:N1} hours ago" -f $age</pre>
+      </div>
+
+      <div class="note">
+        <strong>Reading the result</strong>
+        Under a few minutes means the deployment is alive and you should wait. Hours, while
+        <code>status</code> still reads <code>DeploymentInProgress</code>, means the orchestrator is gone and the run
+        will never finish. There is no resume. Redeploy.
+      </div>
+
+      <h3>Why a lab deallocates itself mid-deployment</h3>
+
+      <p>
+        This is worth calling out because the cause is not obvious and the effect is severe. Deployment automation
+        writes progress into a tag on the resource group and the host. It writes that tag by replacing the tag set
+        rather than merging into it, so any governance tags applied at deployment time are removed. In a subscription
+        with cost automation, a host that has lost its cost-exemption tag becomes a candidate for shutdown.
+      </p>
+
+      <p>The evidence is a straight comparison within one resource group:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Resource</th><th>Written to by the deployment?</th><th>Tags afterwards</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">LocalBox-VNet</td><td>No</td><td class="mono">CostControl, SecurityControl, Project</td></tr>
+            <tr><td class="mono">LocalBox-Client</td><td>Yes, progress tag</td><td class="mono">DeploymentProgress only</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note good">
+        <strong>Reapply the tag before you start, not after</strong>
+        Restoring <code>CostControl</code> once the host is already stopped does not save the deployment, because the
+        deployment is already dead. <code>Start-Lab.ps1</code> in this repository reapplies the tags first for exactly
+        this reason, but the useful time to run it is before a long deployment, not after one fails.
+      </div>
+
+      <h3>Watching it without opening a session on the host</h3>
 
       <p>
         At resource group level the deployment simply reports <code>Running</code>. The detail lives inside the
