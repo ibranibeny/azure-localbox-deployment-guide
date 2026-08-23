@@ -223,6 +223,7 @@ footer { border-top: 1px solid var(--cp-border); background: var(--cp-bg-elevate
 <div class="layout">
   <nav class="toc" id="toc" aria-label="Table of contents">
     <ol>
+      <li><a href="#guidance">Deployment guidance</a></li>
       <li><a href="#architecture">Architecture overview</a></li>
       <li><a href="#prerequisites">Azure prerequisites</a></li>
       <li><a href="#deployment">Deploying Azure Local</a></li>
@@ -245,8 +246,99 @@ footer { border-top: 1px solid var(--cp-border); background: var(--cp-bg-elevate
   <main>
     <button class="nav-toggle" id="navToggle" aria-expanded="false" aria-controls="toc">Table of contents</button>
 
+    <section id="guidance">
+      <h2>1. Deployment guidance</h2>
+      <p class="sub">Read this before running anything. It is the shape of the work, not the commands.</p>
+
+      <p>
+        The rest of this document is a runbook: procedures, commands, and the errors they produce. This section is
+        different. It exists to set expectations, because most of the trouble with Azure Local comes from a wrong
+        mental model rather than a wrong command.
+      </p>
+
+      <h3>The one idea that prevents most confusion</h3>
+
+      <div class="note warn">
+        <strong>A resource existing in Azure says nothing about whether it works</strong>
+        Azure Local resources appear in the portal early, while the thing they represent is still being built. They
+        are named, billed, and queryable long before they function. Every field called
+        <code>provisioningState</code> answers “did Azure record this?”, not “is it alive?”
+      </div>
+
+      <p>Three separate examples of the same trap, each of which is covered later:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Resource</th><th>Misleading field</th><th>Field that actually matters</th></tr></thead>
+          <tbody>
+            <tr><td>Arc resource bridge</td><td class="mono">provisioningState: Succeeded</td><td class="mono">status: Running</td></tr>
+            <tr><td>Azure Local instance</td><td class="mono">provisioningState: Succeeded</td><td class="mono">connectivityStatus: Connected</td></tr>
+            <tr><td>ARM deployment</td><td class="mono">Succeeded</td><td>Whether the instance reports nodes</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Judge readiness by runtime state, and when a runtime field is ambiguous, judge by the age of the last report.
+        A component that has not spoken to Azure in hours is not slow, it is gone.
+      </p>
+
+      <h3>Decide these before you start</h3>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Decision</th><th>Why it is hard to change later</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>IP pool range on the workload logical network</td>
+              <td>Pools cannot be added or resized afterwards. Changing one means deleting the network and everything attached to it.</td>
+            </tr>
+            <tr>
+              <td>Which resource group receives images</td>
+              <td>Each one needs its own role assignment. Deployment only grants it on the group it deployed into.</td>
+            </tr>
+            <tr>
+              <td>Addresses reserved outside the pool for load balancers</td>
+              <td>Overlap causes intermittent failures that are painful to trace.</td>
+            </tr>
+            <tr>
+              <td>A maintenance window long enough for the whole run</td>
+              <td>Interrupting deployment does not pause it. It ends it.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>What the whole path looks like</h3>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Stage</th><th>You are done when</th><th>Covered in</th></tr></thead>
+          <tbody>
+            <tr><td>Prerequisites</td><td>Providers registered, roles assigned</td><td>Section 3</td></tr>
+            <tr><td>Deployment</td><td>Instance <code>Connected</code>, bridge <code>Running</code>, custom location exists</td><td>Section 4</td></tr>
+            <tr><td>Networking</td><td>Logical network has an IP pool</td><td>Section 7</td></tr>
+            <tr><td>Images</td><td>Image reports 100 percent</td><td>Sections 8 and 9</td></tr>
+            <tr><td>Workloads</td><td>VM has an address from the pool</td><td>Sections 10 and 11</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note">
+        <strong>Where the time goes</strong>
+        Roughly eleven minutes of Azure work, then several hours of deployment you cannot speed up, then minutes per
+        workload resource. The long middle is normal. Plan around it rather than watching it.
+      </div>
+
+      <div class="note good">
+        <strong>If you only remember three things</strong>
+        Give every resource group that receives images its own role assignment. Create logical networks with an IP
+        pool from the start. Do not let anything stop the host while a deployment is running.
+      </div>
+    </section>
+
     <section id="architecture">
-      <h2>1. Architecture overview</h2>
+      <h2>2. Architecture overview</h2>
       <p class="sub">Knowing which component owns which responsibility explains almost every failure mode in this runbook.</p>
 
       <p>
@@ -339,7 +431,7 @@ footer { border-top: 1px solid var(--cp-border); background: var(--cp-bg-elevate
     </section>
 
     <section id="prerequisites">
-      <h2>2. Azure prerequisites</h2>
+      <h2>3. Azure prerequisites</h2>
       <p class="sub">Done once per subscription. A missing provider surfaces much later as an error that looks unrelated.</p>
 
       <div class="code">
@@ -419,7 +511,7 @@ az role assignment create `
     </section>
 
     <section id="deployment">
-      <h2>3. Deploying Azure Local, and watching it happen</h2>
+      <h2>4. Deploying Azure Local, and watching it happen</h2>
       <p class="sub">What the deployment actually does, how long each phase takes, and the one action that destroys it.</p>
 
       <h3>What you are deploying</h3>
@@ -458,7 +550,7 @@ az role assignment create `
           <tbody>
             <tr><td>Machines registered with Arc, reporting <code>Connected</code></td><td>Deployment has nothing to build on.</td></tr>
             <tr><td>Resource providers registered, including <code>Microsoft.EdgeMarketplace</code></td><td>Surfaces hours later as an image download failure that looks unrelated.</td></tr>
-            <tr><td><code>Azure Connected Machine Resource Manager</code> on the resource group</td><td>Image downloads fail with <code>Forbidden</code>. See section 2.</td></tr>
+            <tr><td><code>Azure Connected Machine Resource Manager</code> on the resource group</td><td>Image downloads fail with <code>Forbidden</code>. See section 3.</td></tr>
             <tr><td>DNS that resolves the cluster domain</td><td>Validation fails at the DNS stage, late in the run.</td></tr>
             <tr><td>Time synchronisation</td><td>Domain join and certificate operations fail in confusing ways.</td></tr>
             <tr><td>A maintenance window measured in hours</td><td>See the warning below. This is the one that ends deployments.</td></tr>
@@ -837,7 +929,7 @@ $validation.steps |
     </section>
 
     <section id="empty-blade">
-      <h2>4. Diagnosing the empty VM blade</h2>
+      <h2>5. Diagnosing the empty VM blade</h2>
       <p class="sub">The portal shows two different messages for this condition, and one of them is misleading.</p>
 
       <figure>
@@ -880,7 +972,7 @@ $validation.steps |
     </section>
 
     <section id="verify">
-      <h2>5. Verifying the control plane</h2>
+      <h2>6. Verifying the control plane</h2>
       <p class="sub">One block that confirms every layer 2 and layer 3 resource actually exists.</p>
 
       <div class="code">
@@ -932,7 +1024,7 @@ $all |
     </section>
 
     <section id="lnet">
-      <h2>6. Logical networks and IP pools</h2>
+      <h2>7. Logical networks and IP pools</h2>
       <p class="sub">The automatically created InfraLNET is not for workloads, and a network without an IP pool will break AKS.</p>
 
       <p>
@@ -1013,7 +1105,7 @@ az stack-hci-vm network lnet create `
     </section>
 
     <section id="windows-image">
-      <h2>7. Windows VM image</h2>
+      <h2>8. Windows VM image</h2>
       <p class="sub">Windows images can be pulled straight from Azure Marketplace by URN.</p>
 
       <div class="code">
@@ -1141,7 +1233,7 @@ $d = az resource show --ids $id --api-version 2025-04-01-preview -o json | Conve
       <div class="note">
         <strong>Expect this after restarting a lab</strong>
         Interruptions are more likely while the cluster is still settling, for example shortly after the sequence in
-        section 13. A download that fails once at a high percentage and then completes on retry is normal behaviour,
+        section 14. A download that fails once at a high percentage and then completes on retry is normal behaviour,
         not a symptom worth investigating further.
       </div>
 
@@ -1167,7 +1259,7 @@ $d = az resource show --ids $id --api-version 2025-04-01-preview -o json | Conve
     </section>
 
     <section id="linux-image">
-      <h2>8. Linux VM image</h2>
+      <h2>9. Linux VM image</h2>
       <p class="sub">Linux cannot be pulled by URN. The supported path builds the VHD yourself.</p>
 
       <div class="note">
@@ -1284,7 +1376,7 @@ ERROR CODE: NoAuthenticationInformation
     </section>
 
     <section id="create-vm">
-      <h2>9. Creating a VM</h2>
+      <h2>10. Creating a VM</h2>
       <p class="sub">With an image, a logical network, and a storage path in place.</p>
 
       <div class="code">
@@ -1335,7 +1427,7 @@ az stack-hci-vm create `
     </section>
 
     <section id="aks">
-      <h2>10. AKS enabled by Azure Arc</h2>
+      <h2>11. AKS enabled by Azure Arc</h2>
       <p class="sub">AKS reuses the same logical network, but validates it far more strictly than Arc VMs do.</p>
 
       <p>
@@ -1403,7 +1495,7 @@ az aksarc create `
     </section>
 
     <section id="arc-agent">
-      <h2>11. Updating the Arc agent</h2>
+      <h2>12. Updating the Arc agent</h2>
       <p class="sub">On Azure Local nodes the rules differ from ordinary Arc-enabled servers.</p>
 
       <div class="note warn">
@@ -1449,7 +1541,7 @@ az rest --method get --url "$base/updates?api-version=2024-04-01" `
     </section>
 
     <section id="pitfalls">
-      <h2>12. Windows CLI pitfalls</h2>
+      <h2>13. Windows CLI pitfalls</h2>
       <p class="sub">These consumed the most time precisely because they do not look like errors.</p>
 
       <div class="table-wrap">
@@ -1507,7 +1599,7 @@ az rest --method get --url "$base/updates?api-version=2024-04-01" `
     </section>
 
     <section id="restart">
-      <h2>13. Restarting a stopped host</h2>
+      <h2>14. Restarting a stopped host</h2>
       <p class="sub">Everything reports Offline, yet nothing is broken. This is the most alarming-looking failure in a lab.</p>
 
       <p>
@@ -1529,7 +1621,7 @@ az rest --method get --url "$base/updates?api-version=2024-04-01" `
       </div>
 
       <div class="note warn">
-        <strong>The same trap as section 5, seen from the other side</strong>
+        <strong>The same trap as section 6, seen from the other side</strong>
         <code>provisioningState</code> still reads <code>Succeeded</code> because the ARM record is intact and nothing
         was deleted. Only the runtime <code>status</code> field tracks whether the appliance is actually alive. Judge
         availability by <code>status</code>, never by <code>provisioningState</code>.
@@ -1698,7 +1790,7 @@ az resource show `
     </section>
 
     <section id="automation">
-      <h2>14. Automation script</h2>
+      <h2>15. Automation script</h2>
       <p class="sub">Everything in this runbook, as one idempotent PowerShell script.</p>
 
       <h3>Getting the script</h3>
@@ -1829,7 +1921,7 @@ Invoke-WebRequest -Uri $url -OutFile .\Install-AzureLocalStack.ps1</pre>
     </section>
 
     <section id="fixes">
-      <h2>15. Error to fix-command reference</h2>
+      <h2>16. Error to fix-command reference</h2>
       <p class="sub">Every failure encountered during one full deployment cycle, with the command that resolved it.</p>
 
       <p>
@@ -2004,7 +2096,7 @@ Invoke-WebRequest -Uri $url -OutFile .\Install-AzureLocalStack.ps1</pre>
     </section>
 
     <section id="references">
-      <h2>16. References</h2>
+      <h2>17. References</h2>
       <p class="sub">Every procedure here follows the official documentation below.</p>
       <ul>
         <li><a href="https://learn.microsoft.com/azure/azure-arc/resource-bridge/overview">What is Azure Arc resource bridge?</a></li>
